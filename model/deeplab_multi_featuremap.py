@@ -78,23 +78,23 @@ class Classifier_Module(nn.Module):
         for m in self.conv2d_list:
             m.weight.data.normal_(0, 0.01)
         
- #       self.bn_map = nn.BatchNorm2d(128, affine=affine_par)
- #       for i in self.bn_map.parameters():
- #           i.requires_grad = False
+        self.bn_map = nn.BatchNorm2d(128, affine=affine_par)
+        for i in self.bn_map.parameters():
+            i.requires_grad = False
 
- #       self.relu_map = nn.ReLU(inplace=True)
- #       self.conv_map = nn.Conv2d(128, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
+        self.relu_map = nn.ReLU(inplace=True)
+        self.conv_map = nn.Conv2d(128, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         
- #       self.conv_map.weight.data.normal_(0, 0.01)
+        self.conv_map.weight.data.normal_(0, 0.01)
         
     def forward(self, x):
         out = self.conv2d_list[0](x)
         for i in range(len(self.conv2d_list) - 1):
             out += self.conv2d_list[i + 1](x)
             
- #           out = self.bn_map(out)
- #           out = self.relu_map(out)
- #           out = self.conv_map(out)
+            out = self.bn_map(out)
+            out = self.relu_map(out)
+            out = self.conv_map(out)
             return out
 
 
