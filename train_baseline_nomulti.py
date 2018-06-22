@@ -12,7 +12,7 @@ from PIL import Image
 import json
 from os.path import join
 
-from model.deeplab_multi import Res_Deeplab   ##########
+from model.deeplab_multi_nomulti import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset import GTA5DataSet
 from dataset.cityscapes_dataset import cityscapesDataSet
@@ -40,8 +40,8 @@ POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'pretrain.pth'       ##########
 SAVE_PRED_EVERY = 1000
-SNAPSHOT_DIR = './snapshots/train_baseline'   ##########
-RESULTS_DIR = './baseline.txt'                  ##########
+SNAPSHOT_DIR = './snapshots/model_baseline_nomulti'   ##########
+RESULTS_DIR = './result_baseline_nomulti.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
