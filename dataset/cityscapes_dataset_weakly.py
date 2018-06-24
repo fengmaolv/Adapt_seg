@@ -26,8 +26,10 @@ class cityscapesDataSet(data.Dataset):
         self.files = []
         self.set = set
         # for split in ["train", "trainval", "val"]:
-        with open('cityscapes_train_19class', 'rb') as fp:
+        with open('cityscapes_weakLabel_19class', 'rb') as fp:
             itemlist = pickle.load(fp)
+        itemlist = itemlist * int(np.ceil(float(max_iters) / len(self.img_ids)))
+
         count = 0
         for name in self.img_ids:
             img_file = osp.join(self.root, "leftImg8bit/%s/%s" % (self.set, name))
@@ -47,6 +49,7 @@ class cityscapesDataSet(data.Dataset):
 
         image = Image.open(datafiles["img"]).convert('RGB')
         name = datafiles["name"]
+        class_label = datafiles["class_label"]
 
         # resize
         image = image.resize(self.crop_size, Image.BICUBIC)
@@ -58,5 +61,5 @@ class cityscapesDataSet(data.Dataset):
         image -= self.mean
         image = image.transpose((2, 0, 1))
 
-        return image.copy(), np.array(size), name
+        return image.copy(), class_label.copy(), np.array(size), name
 
