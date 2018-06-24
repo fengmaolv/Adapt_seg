@@ -14,8 +14,8 @@ from os.path import join
 
 from model.deeplab_multi_weakly import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
-from dataset.gta5_dataset import GTA5DataSet
-from dataset.cityscapes_dataset import cityscapesDataSet
+from dataset.gta5_dataset_weakly import GTA5DataSet
+from dataset.cityscapes_dataset_weakly import cityscapesDataSet
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
@@ -192,7 +192,8 @@ def main():
     gt_imgs = open(label_path_list, 'r').read().splitlines()
     gt_imgs = [join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
 
-    interp_val = nn.UpsamplingBilinear2d(size=(com_size[1], com_size[0]))
+    interp_val = nn.Upsample(size=(com_size[1], com_size[0]), mode='bilinear')
+
 
 ############################
 
@@ -268,7 +269,7 @@ def main():
             # train with pixel map
 
             _, batch = next(trainloader_iter)
-            images, labels, _, _ = batch
+            images, labels, class_label_source, _, _ = batch
             images = Variable(images).cuda(args.gpu)
 
             pred = model(images)
@@ -284,26 +285,26 @@ def main():
             loss = loss / args.iter_size
             loss.backward()
             
-          #  loss_seg_value1 += loss_seg1.data.cpu().numpy()[0] / args.iter_size
-            loss_seg_value2 += loss_seg2.data.cpu().numpy()[0] / args.iter_size
+          #  loss_seg_value1 += loss_seg1.data.item() / args.iter_size
+            loss_seg_value2 += loss_seg2.data.item() / args.iter_size
 
             # train with class label
 
             _, batch = targetloader_iter.next()
-            images, _, _ = batch
+            images, class_label_target, _, _ = batch
             images = Variable(images).cuda(args.gpu)
             
             pred_target = model(images)
             pred_target1, pred_target2 = pred_target
             
-            loss_weakly_source = bce_loss(pred1, )
-            loss_weakly_target = bce_loss(pred_target1, )
+            loss_weakly_source = bce_loss(pred1, Variable(torch.from_numpy(class_label_source)).cuda(args.gpu))
+            loss_weakly_target = bce_loss(pred_target1, Variable(torch.from_numpy(class_label_target)).cuda(args.gpu))
             
             loss_weakly = loss_weakly_source + loss_weakly_target
             loss_weakly = loss_weakly / args.iter_size
             loss_weakly.backward()
             
-            loss_weakly_value += loss_weakly.data.cpu().numpy()[0] / args.iter_size
+            loss_weakly_value += loss_weakly.data.item() / args.iter_size
             
 
         optimizer.step()
@@ -331,7 +332,7 @@ def main():
                 pred = interp_val(output2)
                 pred = pred[0].permute(1,2,0)
                 pred = torch.max(pred, 2)[1].byte()
-                pred = pred.data.cpu().numpy()
+                pred = pred.data.item()
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)

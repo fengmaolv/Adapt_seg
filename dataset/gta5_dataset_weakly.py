@@ -31,8 +31,10 @@ class GTA5DataSet(data.Dataset):
                               26: 13, 27: 14, 28: 15, 31: 16, 32: 17, 33: 18}
 
         # for split in ["train", "trainval", "val"]:
-        with open('cityscapes_train_19class', 'rb') as fp:
+        with open('gta5_weakLabel_19class', 'rb') as fp:
             itemlist = pickle.load(fp)
+        itemlist = itemlist * int(np.ceil(float(max_iters) / len(self.img_ids)))
+        
         count = 0
         for name in self.img_ids:
             img_file = osp.join(self.root, "images/%s" % name)
@@ -43,6 +45,7 @@ class GTA5DataSet(data.Dataset):
                 "name": name,
                 "class_label": itemlist[count]
             })
+            count +=1
 
     def __len__(self):
         return len(self.files)
