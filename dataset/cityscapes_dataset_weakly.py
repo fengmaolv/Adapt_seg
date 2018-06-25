@@ -25,10 +25,12 @@ class cityscapesDataSet(data.Dataset):
             self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
         self.files = []
         self.set = set
+
         # for split in ["train", "trainval", "val"]:
-        with open('cityscapes_weakLabel_19class', 'rb') as fp:
+        with open('./dataset/cityscapes_weakLabel_19class', 'rb') as fp:
             itemlist = pickle.load(fp)
-        itemlist = itemlist * int(np.ceil(float(max_iters) / len(self.img_ids)))
+        itemlist = itemlist * int(np.ceil(len(self.img_ids)/len(itemlist)))
+
 
         count = 0
         for name in self.img_ids:

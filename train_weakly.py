@@ -16,6 +16,8 @@ from model.deeplab_multi_weakly import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset_weakly import GTA5DataSet
 from dataset.cityscapes_dataset_weakly import cityscapesDataSet
+import dataset.cityscapes_dataset
+
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
@@ -183,7 +185,7 @@ def main():
 
 ############################
 #validation data
-    testloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
+    testloader = data.DataLoader(dataset.cityscapes_dataset.cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
                                     batch_size=1, shuffle=False, pin_memory=True)
     with open('./dataset/cityscapes_list/info.json', 'r') as fp:
         info = json.load(fp)
@@ -250,15 +252,14 @@ def main():
 
     bce_loss = torch.nn.BCEWithLogitsLoss()
 
-
-    interp = nn.UpsamplingBilinear2d(size=(input_size[1], input_size[0]))
+    interp = nn.Upsample(size=(input_size[1], input_size[0]), mode='bilinear')
    # interp_target = nn.UpsamplingBilinear2d(size=(input_size_target[1], input_size_target[0]))
 
 
     for i_iter in range(args.num_steps):
 
        # loss_seg_value1 = 0
-        loss_seg_value2 = 0
+        loss_seg_value = 0
         loss_weakly_value = 0
         
         optimizer.zero_grad()
@@ -271,38 +272,32 @@ def main():
             _, batch = next(trainloader_iter)
             images, labels, class_label_source, _, _ = batch
             images = Variable(images).cuda(args.gpu)
-
             pred = model(images)
             pred1, pred2 = pred
             #pred1 = interp(pred1)
             pred2 = interp(pred2)
 
-            #loss_seg1 = loss_calc(pred1, labels, args.gpu)
-            loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2 # + args.lambda_seg * loss_seg1
+            _, batch = next(targetloader_iter)
+            images, class_label_target, _, _ = batch
+            images = Variable(images).cuda(args.gpu)
+            pred_target = model(images)
+            pred_target1, pred_target2 = pred_target
+
+            class_label_source = class_label_source.type(torch.FloatTensor)
+            class_label_target = class_label_target.type(torch.FloatTensor)
+            loss_weakly_source = bce_loss(pred1, Variable(class_label_source.reshape(pred1.size())).cuda(args.gpu))
+            loss_weakly_target = bce_loss(pred_target1, Variable(class_label_target.reshape(pred_target1.size())).cuda(args.gpu))
+
+            loss_weakly = loss_weakly_source + loss_weakly_target
+            loss_seg = loss_calc(pred2, labels, args.gpu)
+
+            loss = loss_seg + loss_weakly  # + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            
-          #  loss_seg_value1 += loss_seg1.data.item() / args.iter_size
-            loss_seg_value2 += loss_seg2.data.item() / args.iter_size
-
-            # train with class label
-
-            _, batch = targetloader_iter.next()
-            images, class_label_target, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-            
-            pred_target = model(images)
-            pred_target1, pred_target2 = pred_target
-            
-            loss_weakly_source = bce_loss(pred1, Variable(torch.from_numpy(class_label_source)).cuda(args.gpu))
-            loss_weakly_target = bce_loss(pred_target1, Variable(torch.from_numpy(class_label_target)).cuda(args.gpu))
-            
-            loss_weakly = loss_weakly_source + loss_weakly_target
-            loss_weakly = loss_weakly / args.iter_size
-            loss_weakly.backward()
+           
+            loss_seg_value += loss_seg.data.item() / args.iter_size
             
             loss_weakly_value += loss_weakly.data.item() / args.iter_size
             
@@ -312,7 +307,7 @@ def main():
         print('exp = {}'.format(args.snapshot_dir))
         print(
         'iter = {0:8d}/{1:8d}, loss_seg = {3:.3f} loss_weakly_value = {3:.3f}'.format(
-            i_iter, args.num_steps, loss_seg_value2, loss_weakly_value))
+            i_iter, args.num_steps, loss_seg_value, loss_weakly_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')

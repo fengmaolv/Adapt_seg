@@ -83,16 +83,16 @@ class Classifier_Module(nn.Module):
         
     def forward(self, x):
         out = self.conv2d_list[0](x) + self.conv2d_list[1](x)
-        
-        out_att = out.reshape([out.size[0],out.size[1],out.size[2]*out.size[3]])      
+        #print("fengmao:",out.size())
+        out_att = out.reshape([out.size()[0],out.size()[1],out.size()[2]*out.size()[3]])      
         out_att = torch.exp(out_att)         
         out_att = torch.nn.functional.normalize(out_att, p=1, dim=2, eps=0)
-        out_att = out_att.reshape([out.size[0],out.size[1],out.size[2],out.size[3]])
+        out_att = out_att.reshape([out.size()[0],out.size()[1],out.size()[2],out.size()[3]])
         
         out_confi = self.conv_confi(x)  
         out_att = out_confi * out_att
-        
-        out_class = nn.functional.avg_pool2d(kernel_size=(out_att.size[2],out_att.size[3]))(out_att)
+  
+        out_class = nn.functional.avg_pool2d(input=out_att, kernel_size=(out_att.size()[2],out_att.size()[3]))
         
         return out_class.squeeze(), out
 
