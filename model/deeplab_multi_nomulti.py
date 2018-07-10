@@ -156,12 +156,13 @@ class ResNet(nn.Module):
         x = self.layer2(x)
 
         x = self.layer3(x)
-        x1 = self.layer5(x)
+      #  x1 = self.layer5(x)
 
         x2 = self.layer4(x)
         x2 = self.layer6(x2)
 
-        return x1, x2
+        return x2
+#        return x1, x2
 
     def get_1x_lr_params_NOscale(self):
         """

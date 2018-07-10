@@ -11,13 +11,18 @@ import os.path as osp
 from PIL import Image
 import json
 from os.path import join
+import torch.nn.functional as F
 
-from model.deeplab_multi_featuremap import Res_Deeplab ##########
+
+from model.deeplab_multi_dropout import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
-from dataset.gta5_dataset import GTA5DataSet
-from dataset.cityscapes_dataset import cityscapesDataSet
+from dataset.gta5_dataset_weakly import GTA5DataSet
+from dataset.cityscapes_dataset_weakly import cityscapesDataSet
+import dataset.cityscapes_dataset
+
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
+SEQ = torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]])
 
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
@@ -38,10 +43,10 @@ NUM_STEPS = 250000
 NUM_STEPS_STOP = 250000      
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = 'pretrain.pth'       ##########
+RESTORE_FROM = './snapshots/model_baseline_dropout/GTA5_99000.pth'      ##########
 SAVE_PRED_EVERY = 1000
-SNAPSHOT_DIR = './snapshots/train_baseline_featuremap'   ##########
-RESULTS_DIR = './baseline_featuremap.txt'                  ##########
+SNAPSHOT_DIR = './snapshots/model_weakly_dropout'   ##########
+RESULTS_DIR = './result_weakly_dropout.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
@@ -177,12 +182,13 @@ def main():
 
     h, w = map(int, args.com_size.split(','))
     com_size = (h, w)
-
-
+    
+    h, w = map(int, args.input_size_target.split(','))
+    input_size_target = (h, w)
 
 ############################
 #validation data
-    testloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
+    testloader = data.DataLoader(dataset.cityscapes_dataset.cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
                                     batch_size=1, shuffle=False, pin_memory=True)
     with open('./dataset/cityscapes_list/info.json', 'r') as fp:
         info = json.load(fp)
@@ -191,7 +197,8 @@ def main():
     gt_imgs = open(label_path_list, 'r').read().splitlines()
     gt_imgs = [join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
 
-    interp_val = nn.UpsamplingBilinear2d(size=(com_size[1], com_size[0]))
+    interp_val = nn.Upsample(size=(com_size[1], com_size[0]), mode='bilinear')
+
 
 ############################
 
@@ -200,20 +207,20 @@ def main():
     # Create network
     if args.model == 'DeepLab':
         model = Res_Deeplab(num_classes=args.num_classes)
-        if args.restore_from[:4] == 'http' :
-            saved_state_dict = model_zoo.load_url(args.restore_from)
-        else:
-            saved_state_dict = torch.load(args.restore_from)
+     #   if args.restore_from[:4] == 'http' :
+     #       saved_state_dict = model_zoo.load_url(args.restore_from)
+     #   else:
+        saved_state_dict = torch.load(args.restore_from)
 
-        new_params = model.state_dict().copy()
-        for i in saved_state_dict:
-            # Scale.layer5.conv2d_list.3.weight
-            i_parts = i.split('.')
-            # print i_parts
-            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
-                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+        #new_params = model.state_dict().copy()
+     #   for i in saved_state_dict:
+     #       # Scale.layer5.conv2d_list.3.weight
+     #       i_parts = i.split('.')
+     #       # print i_parts
+     #       if not args.num_classes == 19 or not i_parts[1] == 'layer5':
+     #           new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
                 # print i_parts
-        model.load_state_dict(new_params)
+        model.load_state_dict(saved_state_dict)
 
 
     model.train()
@@ -232,50 +239,106 @@ def main():
 
     trainloader_iter = enumerate(trainloader)
 
+    targetloader = data.DataLoader(
+        cityscapesDataSet(args.data_dir_target, args.data_list_target, max_iters=args.num_steps * args.iter_size * args.batch_size,
+                    crop_size=input_size_target,
+                    scale=False, mirror=args.random_mirror, mean=IMG_MEAN, set=args.set),
+        batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
+
+    targetloader_iter = enumerate(targetloader)
+
     # implement model.optim_parameters(args) to handle different models' lr setting
 
     optimizer = optim.SGD(model.optim_parameters(args),
                           lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
     optimizer.zero_grad()
 
-    interp = nn.UpsamplingBilinear2d(size=(input_size[1], input_size[0]))
+    bce_loss = torch.nn.BCEWithLogitsLoss()
+
+    interp = nn.Upsample(size=(input_size[1], input_size[0]), mode='bilinear')
+   # interp_target = nn.UpsamplingBilinear2d(size=(input_size_target[1], input_size_target[0]))
+
 
     for i_iter in range(args.num_steps):
 
-        loss_seg_value1 = 0
-        loss_seg_value2 = 0
-
+       # loss_seg_value1 = 0
+        loss_seg_value = 0
+      #  loss_weakly_value = 0
+        
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
 
         for sub_i in range(args.iter_size):
 
-            # train G
+            # train with pixel map
 
             _, batch = next(trainloader_iter)
-            images, labels, _, _ = batch
+            images, labels, class_label_source, _, name = batch
+       
             images = Variable(images).cuda(args.gpu)
+            pred = model(images)
+    
+            pred = interp(pred)
 
-            pred1, pred2 = model(images)
-            pred1 = interp(pred1)
-            pred2 = interp(pred2)
+            _, batch = next(targetloader_iter)
+            images, class_label_target, _, _ = batch
+            images = Variable(images).cuda(args.gpu)
+            pred_target = model(images)
+  
+            pred_target = interp(pred_target)
 
-            loss_seg1 = loss_calc(pred1, labels, args.gpu)
-            loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2 + args.lambda_seg * loss_seg1
+         #   print("fengmao:",class_label_target)
+
+            class_label_target = class_label_target.type(torch.FloatTensor)
+          
+            mask_target = class_label_target * SEQ.type(torch.FloatTensor)
+
+            class_label_target = class_label_target * (SEQ-1).type(torch.FloatTensor)            
+
+            pred_target_re = pred_target.reshape(pred_target.size()[0],pred_target.size()[1],pred_target.size()[2]*pred_target.size()[3])
+            instance_index = torch.max(pred_target_re,2)[1]
+
+            mask = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
+            mask[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target
+            mask = mask.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
+            mask = torch.sum(mask,1)
+            mask = mask != 0
+
+            labels_target = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
+            labels_target[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target
+            labels_target = labels_target.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
+            labels_target = torch.sum(labels_target, 1)
+            
+
+            pred_target = pred_target.transpose(1, 2).transpose(2, 3).contiguous()
+       
+            pred_target = pred_target[mask.view(1, 256, 512, 1).repeat(1, 1, 1, 19)].view(-1, 19)
+            
+            labels_target = labels_target[mask]
+
+            labels_target = Variable(labels_target.long())
+            labels_target.requires_grad = False   
+
+            loss_weak = F.cross_entropy(pred_target, labels_target.cuda(args.gpu))
+            
+            loss_seg = loss_calc(pred, labels, args.gpu)
+
+            loss =  loss_seg + loss_weak # + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            loss_seg_value1 += loss_seg1.data.cpu().numpy()[0] / args.iter_size
-            loss_seg_value2 += loss_seg2.data.cpu().numpy()[0] / args.iter_size
+            #print("fengmao",model.state_dict().copy()['layer3.16.conv3.weight'])
 
+            loss_seg_value += loss_seg.data.item() / args.iter_size
+           # print("loss:",loss_weakly_source,loss_weakly_target)   
+           # loss_weakly_value += loss_weakly.data.item() / args.iter_size
         optimizer.step()
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f} loss_seg2 = {3:.3f}'.format(
-            i_iter, args.num_steps, loss_seg_value1, loss_seg_value2))
+        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}'.format(
+            i_iter, args.num_steps, loss_seg_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
@@ -291,8 +354,8 @@ def main():
             for index, batch in enumerate(testloader):
                 print(index)
                 image, _, name = batch
-                output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
-                pred = interp_val(output2)
+                output = model(Variable(image, volatile=True).cuda(args.gpu))
+                pred = interp_val(output[1])
                 pred = pred[0].permute(1,2,0)
                 pred = torch.max(pred, 2)[1].byte()
                 pred = pred.data.cpu().numpy()
