@@ -70,30 +70,35 @@ class Bottleneck(nn.Module):
 class Classifier_Module(nn.Module):
     def __init__(self, inplanes, dilation_series, padding_series, num_classes):
         super(Classifier_Module, self).__init__()
-        self.conv2d_list = nn.ModuleList()
-        for dilation, padding in zip(dilation_series, padding_series):
-            self.conv2d_list.append(
-                nn.Conv2d(inplanes, num_classes, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=True))
+      #  self.conv2d_list = nn.ModuleList()
+      #  for dilation, padding in zip(dilation_series, padding_series):
+       #     self.conv2d_list.append(
+       #         nn.Conv2d(inplanes, 128, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=False))
 
-        for m in self.conv2d_list:
-            m.weight.data.normal_(0, 0.01)
+      #  for m in self.conv2d_list:
+       #     m.weight.data.normal_(0, 0.01)
+        self.drop = nn.Dropout(0.5)
+        self.conv = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True) 
+        self.conv.weight.data.normal_(0, 0.01)       
+ #       self.bn_map = nn.BatchNorm2d(128, affine=affine_par)
+ #       for i in self.bn_map.parameters():
+ #           i.requires_grad = False
+
+ #       self.relu_map = nn.ReLU(inplace=True)
+ #       self.conv_map = nn.Conv2d(128, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         
-        self.conv_confi = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
-        self.conv_confi.weight.data.normal_(0, 0.01)
+ #       self.conv_map.weight.data.normal_(0, 0.01)
         
     def forward(self, x):
-        out = self.conv2d_list[0](x) + self.conv2d_list[1](x)
-        out_att = out.reshape([out.size()[0],out.size()[1],out.size()[2]*out.size()[3]])  
-        out_att = torch.log(torch.exp(out_att-torch.max(out_att)) + 1) + 0.1       
-        out_att = torch.nn.functional.normalize(out_att, p=1, dim=2)
-        out_att = out_att.reshape([out.size()[0],out.size()[1],out.size()[2],out.size()[3]])
-        
-        out_confi = self.conv_confi(x)  
-        out_att = out_confi * out_att
-  
-        out_class = nn.functional.avg_pool2d(input=out_att, kernel_size=(out_att.size()[2],out_att.size()[3]))
-        
-        return out_class.squeeze(), out
+        x = self.drop(x)
+        out = self.conv(x)
+       # for i in range(len(self.conv2d_list) - 1):
+       #     out += self.conv2d_list[i + 1](x)
+            
+ #           out = self.bn_map(out)
+ #           out = self.relu_map(out)
+ #           out = self.conv_map(out)
+        return out
 
 
 class ResNet(nn.Module):
@@ -116,7 +121,7 @@ class ResNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-               # n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, 0.01)
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
@@ -153,13 +158,12 @@ class ResNet(nn.Module):
         x = self.layer2(x)
 
         x = self.layer3(x)
-     #   x1 = self.layer5(x)
+        x1 = self.layer5(x)
 
         x2 = self.layer4(x)
         x2 = self.layer6(x2)
 
-      #  return x1, x2
-        return x2
+        return x1, x2
 
     def get_1x_lr_params_NOscale(self):
         """

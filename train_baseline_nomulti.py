@@ -25,12 +25,12 @@ ITER_SIZE = 1
 NUM_WORKERS = 1
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-INPUT_SIZE = '1280,720'            ##########
+INPUT_SIZE = '512,256'            ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
-INPUT_SIZE_TARGET = '1024,512'     ##########
-COMPARE_SIZE = '2048,1024'     ##########
+INPUT_SIZE_TARGET = '512,256'     ##########
+COMPARE_SIZE = '512,256'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
@@ -267,8 +267,8 @@ def main():
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            loss_seg_value1 += loss_seg1.data.cpu().numpy()[0] / args.iter_size
-            loss_seg_value2 += loss_seg2.data.cpu().numpy()[0] / args.iter_size
+            loss_seg_value1 += loss_seg1.data.item() / args.iter_size
+            loss_seg_value2 += loss_seg2.data.item() / args.iter_size
 
         optimizer.step()
 
