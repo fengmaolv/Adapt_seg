@@ -296,13 +296,18 @@ def main():
             class_label_target = class_label_target * (SEQ-1).type(torch.FloatTensor)            
 
             pred_target_re = pred_target.reshape(pred_target.size()[0],pred_target.size()[1],pred_target.size()[2]*pred_target.size()[3])
+            #print("renying:",pred_target_re.shape)
             instance_index = torch.max(pred_target_re,2)[1]
+            print("renying:",instance_index)
+            print("amy:",class_label_target)
 
             mask = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
             mask[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target
             mask = mask.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-            mask = torch.sum(mask,1)
-            mask = mask != 0
+            mask_bug = mask[0][0]*mask[0][1]*mask[0][2]*mask[0][3]*mask[0][4]*mask[0][5]*mask[0][6]*mask[0][7]*mask[0][8]*mask[0][9]*mask[0][10]*mask[0][11]*mask[0][12]*mask[0][12]*mask[0][13]*mask[0][14]*mask[0][15]*mask[0][16]*mask[0][17]*mask[0][18]
+            mask_bug = mask_bug <= 0
+            mask = torch.sum(mask,1)#*mask_bug
+            mask =(mask != 0) * mask_bug
 
             labels_target = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
             labels_target[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target
@@ -315,6 +320,7 @@ def main():
             pred_target = pred_target[mask.view(1, 256, 512, 1).repeat(1, 1, 1, 19)].view(-1, 19)
             
             labels_target = labels_target[mask]
+            print('fengmao:',labels_target)
 
             labels_target = Variable(labels_target.long())
             labels_target.requires_grad = False   
