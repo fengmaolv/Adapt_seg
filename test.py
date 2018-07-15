@@ -1,3 +1,4 @@
+import torchvision
 import argparse
 import torch
 import torch.nn as nn
@@ -8,16 +9,16 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import os
 import os.path as osp
-from PIL import Image
+from PIL import Image, ImageDraw
 import json
 from os.path import join
 import torch.nn.functional as F
-
+import matplotlib.pyplot as plt
 
 from model.deeplab_multi_dropout import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset_weakly import GTA5DataSet
-from dataset.cityscapes_dataset_weakly import cityscapesDataSet
+from dataset.cityscapes_dataset_weakly_test import cityscapesDataSet
 import dataset.cityscapes_dataset
 
 
@@ -27,7 +28,7 @@ SEQ = torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]])
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 1
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
 INPUT_SIZE = '512,256'            ##########
@@ -44,7 +45,7 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = './snapshots/model_baseline_dropout/GTA5_99000.pth'      ##########
-SAVE_PRED_EVERY = 500
+SAVE_PRED_EVERY = 1000
 SNAPSHOT_DIR = './snapshots/model_weakly_dropout'   ##########
 RESULTS_DIR = './result_weakly_dropout.txt'                  ##########
 WEIGHT_DECAY = 0.0005
@@ -243,7 +244,7 @@ def main():
         cityscapesDataSet(args.data_dir_target, args.data_list_target, max_iters=args.num_steps * args.iter_size * args.batch_size,
                     crop_size=input_size_target,
                     scale=False, mirror=args.random_mirror, mean=IMG_MEAN, set=args.set),
-        batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
+        batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
 
     targetloader_iter = enumerate(targetloader)
 
@@ -258,14 +259,13 @@ def main():
     interp = nn.Upsample(size=(input_size[1], input_size[0]), mode='bilinear')
    # interp_target = nn.UpsamplingBilinear2d(size=(input_size_target[1], input_size_target[0]))
 
-    Softmax = torch.nn.Softmax()
+
     for i_iter in range(args.num_steps):
 
        # loss_seg_value1 = 0
         loss_seg_value = 0
-        loss_weak_value = 0
-        loss_neg_value = 0
-
+      #  loss_weakly_value = 0
+        
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
 
@@ -284,81 +284,88 @@ def main():
             _, batch = next(targetloader_iter)
             images, class_label, _, _ = batch
             images = Variable(images).cuda(args.gpu)
-            pred_target = model(images)  
+            pred_target = model(images)
+  
             pred_target = interp(pred_target)
 
+         #   print("fengmao:",class_label_target)
 
             class_label_target = class_label.type(torch.FloatTensor)
-            class_label_target_reverse = (class_label == 0).type(torch.FloatTensor)
           
             mask_target = class_label
-            mask_target_reverse = class_label_target_reverse
 
+            class_label_target_print = class_label_target * (SEQ).type(torch.FloatTensor)
             class_label_target = class_label_target * (SEQ-1).type(torch.FloatTensor)            
-          #  class_label_target_reverse = class_label_target_reverse * (SEQ-1).type(torch.FloatTensor)
 
             pred_target_re = pred_target.reshape(pred_target.size()[0],pred_target.size()[1],pred_target.size()[2]*pred_target.size()[3])
-            pred_target_re = torch.t(Softmax(torch.t(pred_target_re.reshape(19,pred_target.size()[2]*pred_target.size()[3])))).reshape(1,19,pred_target.size()[2]*pred_target.size()[3])
-            pred_target_modification = pred_target_re.reshape(1,19,pred_target.size()[2],pred_target.size()[3])
             instance_index = torch.max(pred_target_re,2)[1]
 
             mask = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
-            mask_reverse = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
-            print("fengmao:",mask_target)
-            print("amy:",mask_target_reverse)
             mask[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target.type(torch.float)
-            mask_reverse[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target_reverse.type(torch.float)
-
             mask = mask.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-            mask_reverse = mask_reverse.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3]) == 1
-            
             mask = torch.sum(mask,1)
-        #    mask_reverse = torch.sum(mask_reverse,1)
-
             mask =(mask == 1) 
-        #    mask_reverse =(mask_reverse > 0)
-
 
             labels_target = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
-           # labels_target_reverse = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
-
             labels_target[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target
-           # labels_target_reverse[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target_reverse
-
             labels_target = labels_target.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-           # labels_target_reverse = labels_target_reverse.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-
             labels_target = torch.sum(labels_target, 1)
-          #  labels_target = torch.sum(labels_target, 1)
+            
+            a=mask.type(torch.FloatTensor)*(labels_target+1)
+            #print("lalala",a.shape)
+            label_path_list = join('dataset/cityscapes_list/train_lable.txt')
+            gt_imgs_train = open(label_path_list, 'r').read().splitlines()
+            gt_imgs_train = [join('./data/Cityscapes/data/gtFine/train', x) for x in gt_imgs_train]
+            avatar         = Image.open(gt_imgs_train[i_iter])
+            #print(avatar.size)
+            avatar = avatar.resize(input_size, Image.BICUBIC)
+           # print("dadada",avatar.size) 
+            drawAvatar     = ImageDraw.Draw(avatar)
+           # print("dododo",type(drawAvatar.textsize("3")[1]))       
 
+            for i in range(256):
+                for j in range(512):
+                    if a[0][i][j]>0:
+#                        print(i,j,a[0][i][j])
+                        drawAvatar.text([j, i], '{d}'.format(d=a[0][i][j]), fill = (128, 0, 128))
+                      
+ # drawAvatar.text([j, i - drawAvatar.textsize("3")[1]], '{d}'.format(d=a[0][i][j]), fill = (128, 0, 128))
+            del drawAvatar
+
+            #print(torch.from_numpy(np.asarray(avatar,np.float32)),(torch.from_numpy(np.asarray(avatar,np.float32).transpose(2,0,1)).shape))
+
+           # torchvision.utils.save_image(torch.from_numpy(np.asarray(avatar,np.float32).transpose(2,0,1)), '{d}.png'.format(d=i_iter), normalize=True)
+        #    print("amy-",pred_target.shape)
             pred_target = pred_target.transpose(1, 2).transpose(2, 3).contiguous()
+         #   print("amy+",pred_target.shape)
+          #  print("fengmao+",mask.shape)
             pred_target = pred_target[mask.view(1, 256, 512, 1).repeat(1, 1, 1, 19)].view(-1, 19)
          
+            
+        #    print("amy,",pred_target.shape)
+         #   print("fengmao,",pred_target.shape)
+
             labels_target = labels_target[mask]
+         #   print("fengmao,",labels_target.shape,labels_target)
             labels_target = Variable(labels_target.long())
             labels_target.requires_grad = False   
-  
-            loss_weak = F.cross_entropy(pred_target, labels_target.cuda(args.gpu),size_average=True)          
-            loss_seg = loss_calc(pred, labels, args.gpu)
-            a = len(pred_target_modification[mask_reverse])
-            print(pred_target_modification[mask_reverse])
-            print(torch.log(1.000001 - pred_target_modification[mask_reverse]))
-            loss_neg = - (1/a) *  torch.sum(torch.log(1.000001 - pred_target_modification[mask_reverse]))
 
-            loss =  loss_seg + 0.01 *  loss_weak + 0.01 * loss_neg
+            loss_weak = F.cross_entropy(pred_target, labels_target.cuda(args.gpu),size_average=True)
+            
+            loss_seg = loss_calc(pred, labels, args.gpu)
+
+            loss =  loss_seg + loss_weak
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
             loss_seg_value += loss_seg.data.item() / args.iter_size
-            loss_weak_value += loss_weak.data.item() / args.iter_size
-            loss_neg_value += loss_neg.data.item() / args.iter_size
-
         optimizer.step()
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f} loss_weak = {3:.3f} loss_neg = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_weak_value, loss_neg_value))
+        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f}'.format(
+            i_iter, args.num_steps, loss_seg_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
