@@ -77,23 +77,29 @@ class Classifier_Module(nn.Module):
 
         for m in self.conv2d_list:
             m.weight.data.normal_(0, 0.01)
-        
+        self.drop = nn.Dropout(0.5)    
+        self.conv_att = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True)   
         self.conv_confi = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True)
         self.conv_confi.weight.data.normal_(0, 0.01)
         
     def forward(self, x):
-        out = self.conv2d_list[0](x) + self.conv2d_list[1](x)
+       # out = self.conv2d_list[0](x) + self.conv2d_list[1](x)
+        x_drop = self.drop(x)
+        out = self.conv_att(x_drop)
         out_att = out.reshape([out.size()[0],out.size()[1],out.size()[2]*out.size()[3]])  
         out_att = torch.log(torch.exp(out_att-torch.max(out_att)) + 1) + 0.1       
         out_att = torch.nn.functional.normalize(out_att, p=1, dim=2)
         out_att = out_att.reshape([out.size()[0],out.size()[1],out.size()[2],out.size()[3]])
         
         out_confi = self.conv_confi(x)  
-        out_att = out_confi * out_att
+
+        out_class = out_confi * out_att
   
-        out_class = nn.functional.avg_pool2d(input=out_att, kernel_size=(out_att.size()[2],out_att.size()[3]))
-        
-        return out_class.squeeze(), out
+        out_class = nn.functional.avg_pool2d(input=out_class, kernel_size=(out_confi.size()[2],out_confi.size()[3]))
+
+        out_seg = out_att * nn.sigmoid(out_confi)      
+
+        return out_class.squeeze(), out_seg
 
 
 class ResNet(nn.Module):

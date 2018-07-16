@@ -289,10 +289,10 @@ def main():
             loss_weakly_source = bce_loss(pred1, Variable(class_label_source.reshape(pred1.size())).cuda(args.gpu))
             loss_weakly_target = bce_loss(pred_target1, Variable(class_label_target.reshape(pred_target1.size())).cuda(args.gpu))
 
-            loss_weakly = loss_weakly_source + loss_weakly_target
+            loss_weakly = loss_weakly_source #+ loss_weakly_target
             loss_seg = loss_calc(pred2, labels, args.gpu)
 
-            loss = 0 * loss_seg + loss_weakly # + args.lambda_seg * loss_seg1
+            loss = loss_seg + 0.01 * loss_weakly # + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
