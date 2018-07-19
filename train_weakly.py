@@ -40,7 +40,7 @@ NUM_STEPS = 250000
 NUM_STEPS_STOP = 250000      
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = 'pretrain.pth'       ##########
+RESTORE_FROM = './snapshots/model_weakly/GTA5_99000.pth'       ##########
 SAVE_PRED_EVERY = 1000
 SNAPSHOT_DIR = './snapshots/model_weakly'   ##########
 RESULTS_DIR = './result_weakly.txt'                  ##########
@@ -202,22 +202,39 @@ def main():
     cudnn.enabled = True
 
     # Create network
+   # if args.model == 'DeepLab':
+      #  model = Res_Deeplab(num_classes=args.num_classes)
+      #  if args.restore_from[:4] == 'http' :
+        #    saved_state_dict = model_zoo.load_url(args.restore_from)
+       # else:
+      #      saved_state_dict = torch.load(args.restore_from)
+
+     #   new_params = model.state_dict().copy()
+    #    for i in saved_state_dict:
+            # Scale.layer5.conv2d_list.3.weight
+   #         i_parts = i.split('.')
+            # print i_parts
+  #          if not args.num_classes == 19 or not i_parts[1] == 'layer5':
+  #              new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+                # print i_parts
+  #      model.load_state_dict(new_params)
+
     if args.model == 'DeepLab':
         model = Res_Deeplab(num_classes=args.num_classes)
-        if args.restore_from[:4] == 'http' :
-            saved_state_dict = model_zoo.load_url(args.restore_from)
-        else:
-            saved_state_dict = torch.load(args.restore_from)
+     #   if args.restore_from[:4] == 'http' :
+     #       saved_state_dict = model_zoo.load_url(args.restore_from)
+     #   else:
+        saved_state_dict = torch.load(args.restore_from)
 
-        new_params = model.state_dict().copy()
-        for i in saved_state_dict:
+       # new_params = model.state_dict().copy()
+     #   for i in saved_state_dict:
             # Scale.layer5.conv2d_list.3.weight
-            i_parts = i.split('.')
+      #      i_parts = i.split('.')
             # print i_parts
-            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
-                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+       #     if not args.num_classes == 19 or not i_parts[1] == 'layer5':
+        #        new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
                 # print i_parts
-        model.load_state_dict(new_params)
+        model.load_state_dict(saved_state_dict)
 
 
     model.train()
@@ -292,14 +309,14 @@ def main():
             loss_weakly = loss_weakly_source #+ loss_weakly_target
             loss_seg = loss_calc(pred2, labels, args.gpu)
 
-            loss = loss_seg + 0.01 * loss_weakly # + args.lambda_seg * loss_seg1
+            loss = loss_seg + 0.02 * loss_weakly # + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
             #print("fengmao",model.state_dict().copy()['layer3.16.conv3.weight'])
             loss_seg_value += loss_seg.data.item() / args.iter_size
-            print("loss:",loss_weakly_source,loss_weakly_target)   
+           # print("loss:",loss_weakly_source,loss_weakly_target)   
             loss_weakly_value += loss_weakly.data.item() / args.iter_size
         optimizer.step()
 
