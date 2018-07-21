@@ -263,7 +263,7 @@ def main():
     bce_loss = torch.nn.BCEWithLogitsLoss()
 
     for i_iter in range(args.num_steps):
-
+        model.train()
        # loss_seg_value1 = 0
         loss_seg_value = 0
         loss_weak_value = 0
@@ -390,7 +390,7 @@ def main():
             print('taking snapshot ...')
             torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
             hist = np.zeros((19, 19))
-            
+            model.eval() 
             f = open(args.results_dir, 'a')
             for index, batch in enumerate(testloader):
                 print(index)

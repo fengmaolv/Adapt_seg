@@ -337,3 +337,11 @@ i_iter:3500,        miou:31.36000
 i_iter:4000,        miou:27.49000 
 i_iter:4500,        miou:30.35000 
 i_iter:5000,        miou:29.94000 
+i_iter:500,        miou:33.37000 
+i_iter:1000,        miou:31.90000 
+i_iter:1500,        miou:30.63000 
+i_iter:2000,        miou:31.46000 
+i_iter:2500,        miou:32.37000 
+i_iter:500,        miou:31.73000 
+i_iter:1000,        miou:33.97000 
+i_iter:1500,        miou:28.48000 

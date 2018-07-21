@@ -89,7 +89,7 @@ class Classifier_Module(nn.Module):
         out_att = out.reshape([out.size()[0],out.size()[1],out.size()[2]*out.size()[3]])  
         out_att = torch.log(torch.exp(out_att-torch.max(out_att)) + 1) + 0.1       
         out_att = torch.nn.functional.normalize(out_att, p=1, dim=2)
-        out_att = out_att.reshape([out.size()[0],out.size()[1],out.size()[2],out.size()[3]])
+        out_att = out_att.reshape([out.size()[0],out.size()[1],out.size()[2],out.size()[3]]) * 10000
         
         out_confi = self.conv_confi(x)  
 
@@ -97,7 +97,7 @@ class Classifier_Module(nn.Module):
   
         out_class = nn.functional.avg_pool2d(input=out_class, kernel_size=(out_confi.size()[2],out_confi.size()[3]))
 
-        out_seg = out_att * nn.sigmoid(out_confi)      
+        out_seg = out_att * nn.functional.sigmoid(out_confi)      
 
         return out_class.squeeze(), out_seg
 

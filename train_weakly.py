@@ -278,6 +278,9 @@ def main():
             #pred1 = interp(pred1)
             pred2 = interp(pred2)
 
+          #  print("fengmao",class_label_source)
+          #  print("amy",pred1)
+
             _, batch = next(targetloader_iter)
             images, class_label_target, _, _ = batch
             images = Variable(images).cuda(args.gpu)
@@ -292,14 +295,14 @@ def main():
             loss_weakly = loss_weakly_source #+ loss_weakly_target
             loss_seg = loss_calc(pred2, labels, args.gpu)
 
-            loss = loss_seg + 0.01 * loss_weakly # + args.lambda_seg * loss_seg1
+            loss = loss_seg + 0.1 * loss_weakly # + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
             #print("fengmao",model.state_dict().copy()['layer3.16.conv3.weight'])
             loss_seg_value += loss_seg.data.item() / args.iter_size
-            print("loss:",loss_weakly_source,loss_weakly_target)   
+        #    print("loss:",loss_weakly_source,loss_weakly_target)   
             loss_weakly_value += loss_weakly.data.item() / args.iter_size
         optimizer.step()
 
