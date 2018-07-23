@@ -282,7 +282,7 @@ def main():
             # train with pixel map
 
             _, batch = next(trainloader_iter)
-            images, labels, class_label_source, _, name = batch
+            images, labels, class_label_source, mask_weakly, _, name = batch
        
             images = Variable(images).cuda(args.gpu)
             pred = model(images)
@@ -290,11 +290,22 @@ def main():
             pred = interp(pred)
 
             class_label_source_lse = class_label_source.type(torch.FloatTensor)
+<<<<<<< HEAD
             lse  = (1.0/0.8) * torch.log(AvePool(torch.exp(0.8*pred)))    
             print("amy,",lse[0][4])      
             loss_lse_source = bce_loss(lse[0][4], Variable(class_label_source_lse.reshape(lse.size())[0][4]).cuda(args.gpu))
             print("fengmao,",class_label_source_lse.reshape(lse.size())[0][4])
             print("renying,",loss_lse_source)
+=======
+            exp_source = torch.min(torch.exp(1*pred), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
+
+            lse  = (1.0/1) * torch.log(AvePool(exp_source))   
+ 
+        #    print("amy,",lse[0][4])      
+            loss_lse_source = bce_loss(lse, Variable(class_label_source_lse.reshape(lse.size())).cuda(args.gpu))
+        #    print("fengmao,",class_label_source_lse.reshape(lse.size())[0][4])
+        #    print("renying,",loss_lse_source)
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 
          #   print("fengmao",lse)
          #   print("amy",class_label_source)
@@ -312,9 +323,14 @@ def main():
             entropy_samples = - torch.sum(torch.mul(prob_tar, log_prob_tar)) / (input_size_target[0]*input_size_target[1])
 
             class_label_target_lse = class_label.type(torch.FloatTensor)
-            lse  = (1.0/0.8) * torch.log(AvePool(torch.exp(0.8*pred_target)))
+            exp_target = torch.min(torch.exp(1*pred_target), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
+            lse  = (1.0/1) * torch.log(AvePool(exp_target))
             #print("fengmao,",lse)
+<<<<<<< HEAD
             loss_lse_target = bce_loss(lse[0][4], Variable(class_label_target_lse.reshape(lse.size())[0][4]).cuda(args.gpu))
+=======
+            loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 
 
             class_label_target = class_label.type(torch.FloatTensor)
@@ -374,7 +390,11 @@ def main():
          #   print(torch.log(1.000001 - pred_target_modification[mask_reverse]))
             loss_neg = - (1/a) *  torch.sum(torch.log(1.000001 -  pred_target_modification[mask_reverse]))
 
+<<<<<<< HEAD
             loss =  loss_seg + 0.1 *  loss_weak + 0.1 * loss_neg + 0.00 *  loss_lse_source + 0.00 * loss_lse_target# + 0.1 * entropy_samples
+=======
+            loss =  loss_seg + 0.0 *  loss_weak + 0.0 * loss_neg + 0.00 *  loss_lse_source + 0.1 * loss_lse_target# + 0.1 * entropy_samples
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 
             # proper normalization
             loss = loss / args.iter_size
