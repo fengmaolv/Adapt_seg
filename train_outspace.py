@@ -50,7 +50,7 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'pretrain.pth'       ##########
-SAVE_PRED_EVERY = 1000
+SAVE_PRED_EVERY = 2
 SNAPSHOT_DIR = './snapshots/train_outspace'   ##########
 RESULTS_DIR = './outspace.txt'                  ##########
 WEIGHT_DECAY = 0.0005
@@ -338,8 +338,8 @@ def main():
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            loss_seg_value1 += loss_seg1.data.cpu().numpy()[0] / args.iter_size
-            loss_seg_value2 += loss_seg2.data.cpu().numpy()[0] / args.iter_size
+            loss_seg_value1 += loss_seg1.data.item() / args.iter_size
+            loss_seg_value2 += loss_seg2.data.item() / args.iter_size
 
             # train with target
 
@@ -452,6 +452,7 @@ def main():
                 output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
                 pred = interp_val(output2)
                 pred = pred[0].permute(1,2,0)
+                print(pred.shape)
                 pred = torch.max(pred, 2)[1].byte()
                 pred = pred.data.cpu().numpy()
                 label = Image.open(gt_imgs[index])

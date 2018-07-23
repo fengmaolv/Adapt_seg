@@ -70,14 +70,16 @@ class Bottleneck(nn.Module):
 class Classifier_Module(nn.Module):
     def __init__(self, inplanes, dilation_series, padding_series, num_classes):
         super(Classifier_Module, self).__init__()
-        self.conv2d_list = nn.ModuleList()
-        for dilation, padding in zip(dilation_series, padding_series):
-            self.conv2d_list.append(
-                nn.Conv2d(inplanes, 128, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=False))
+      #  self.conv2d_list = nn.ModuleList()
+      #  for dilation, padding in zip(dilation_series, padding_series):
+       #     self.conv2d_list.append(
+       #         nn.Conv2d(inplanes, 128, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=False))
 
-        for m in self.conv2d_list:
-            m.weight.data.normal_(0, 0.01)
-        
+      #  for m in self.conv2d_list:
+       #     m.weight.data.normal_(0, 0.01)
+        self.drop = nn.Dropout(0.5)
+        self.conv = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True) 
+        self.conv.weight.data.normal_(0, 0.01)       
  #       self.bn_map = nn.BatchNorm2d(128, affine=affine_par)
  #       for i in self.bn_map.parameters():
  #           i.requires_grad = False
@@ -88,9 +90,10 @@ class Classifier_Module(nn.Module):
  #       self.conv_map.weight.data.normal_(0, 0.01)
         
     def forward(self, x):
-        out = self.conv2d_list[0](x)
- #       for i in range(len(self.conv2d_list) - 1):
- #           out += self.conv2d_list[i + 1](x)
+        x = self.drop(x)
+        out = self.conv(x)
+       # for i in range(len(self.conv2d_list) - 1):
+       #     out += self.conv2d_list[i + 1](x)
             
  #           out = self.bn_map(out)
  #           out = self.relu_map(out)
@@ -155,12 +158,14 @@ class ResNet(nn.Module):
         x = self.layer2(x)
 
         x = self.layer3(x)
-        x1 = self.layer5(x)
+   #     x1 = self.layer5(x)
 
-        x2 = self.layer4(x)
-        x2 = self.layer6(x2)
+        x1 = self.layer4(x)
+        x2 = self.layer6(x1)
+        
+        return x2, x1
 
-        return x1, x2
+       # return x1, x2
 
     def get_1x_lr_params_NOscale(self):
         """
