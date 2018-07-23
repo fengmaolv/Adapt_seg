@@ -28,11 +28,11 @@ class CrossEntropy2d(nn.Module):
         n, c, h, w = predict.size()
         target_mask = (target >= 0) * (target != self.ignore_label)
         target = target[target_mask]
- #       print("fengmao:",target.size())
         if not target.data.dim():
             return Variable(torch.zeros(1))
         predict = predict.transpose(1, 2).transpose(2, 3).contiguous()
         predict = predict[target_mask.view(n, h, w, 1).repeat(1, 1, 1, c)].view(-1, c)
- #       print("fengmao:",predict.size())
+       # print("fengmao",pred_sta.shape,torch.sum(pred_sta==0))
+
         loss = F.cross_entropy(predict, target, weight=weight, size_average=self.size_average)
         return loss
