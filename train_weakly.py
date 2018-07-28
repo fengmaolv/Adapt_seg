@@ -41,10 +41,14 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 <<<<<<< HEAD
+RESTORE_FROM = './snapshots/model_weakly/GTA5_99000.pth'       ##########
+=======
+<<<<<<< HEAD
 RESTORE_FROM = 'pretrain.pth'       ##########
 =======
 RESTORE_FROM = './snapshots/model_weakly/GTA5_99000.pth'       ##########
 >>>>>>> 0ccdd723fa1353b84d25320046b0ca73a3187249
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 SAVE_PRED_EVERY = 1000
 SNAPSHOT_DIR = './snapshots/model_weakly'   ##########
 RESULTS_DIR = './result_weakly.txt'                  ##########
@@ -207,6 +211,8 @@ def main():
 
     # Create network
 <<<<<<< HEAD
+=======
+<<<<<<< HEAD
     if args.model == 'DeepLab':
         model = Res_Deeplab(num_classes=args.num_classes)
         if args.restore_from[:4] == 'http' :
@@ -224,6 +230,7 @@ def main():
                 # print i_parts
         model.load_state_dict(new_params)
 =======
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
    # if args.model == 'DeepLab':
       #  model = Res_Deeplab(num_classes=args.num_classes)
       #  if args.restore_from[:4] == 'http' :
@@ -257,7 +264,10 @@ def main():
         #        new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
                 # print i_parts
         model.load_state_dict(saved_state_dict)
+<<<<<<< HEAD
+=======
 >>>>>>> 0ccdd723fa1353b84d25320046b0ca73a3187249
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 
 
     model.train()
@@ -339,10 +349,14 @@ def main():
             loss_seg = loss_calc(pred2, labels, args.gpu)
 
 <<<<<<< HEAD
+            loss = loss_seg + 0.02 * loss_weakly # + args.lambda_seg * loss_seg1
+=======
+<<<<<<< HEAD
             loss = loss_seg + 0.1 * loss_weakly # + args.lambda_seg * loss_seg1
 =======
             loss = loss_seg + 0.02 * loss_weakly # + args.lambda_seg * loss_seg1
 >>>>>>> 0ccdd723fa1353b84d25320046b0ca73a3187249
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
 
             # proper normalization
             loss = loss / args.iter_size
@@ -350,10 +364,14 @@ def main():
             #print("fengmao",model.state_dict().copy()['layer3.16.conv3.weight'])
             loss_seg_value += loss_seg.data.item() / args.iter_size
 <<<<<<< HEAD
+           # print("loss:",loss_weakly_source,loss_weakly_target)   
+=======
+<<<<<<< HEAD
         #    print("loss:",loss_weakly_source,loss_weakly_target)   
 =======
            # print("loss:",loss_weakly_source,loss_weakly_target)   
 >>>>>>> 0ccdd723fa1353b84d25320046b0ca73a3187249
+>>>>>>> c79fa59dcac1e27ea09d42686cd71ff60cd3f039
             loss_weakly_value += loss_weakly.data.item() / args.iter_size
         optimizer.step()
 

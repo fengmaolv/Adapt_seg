@@ -46,7 +46,7 @@ RANDOM_SEED = 1234
 RESTORE_FROM = './snapshots/model_baseline_dropout/GTA5_99000.pth'      ##########
 SAVE_PRED_EVERY = 500
 SNAPSHOT_DIR = './snapshots/model_weakly_nomulti'   ##########
-RESULTS_DIR = './result_weakly_dropout.txt'                  ##########
+RESULTS_DIR = './result_weakly_dropout_2_00_01.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
@@ -260,6 +260,7 @@ def main():
 
     Softmax = torch.nn.Softmax()
     AvePool = torch.nn.AvgPool2d(kernel_size=(256,512))
+    MaxPool = torch.nn.MaxPool2d(kernel_size=(256,512), return_indices=True)
     bce_loss = torch.nn.BCEWithLogitsLoss()
 
     for i_iter in range(args.num_steps):
@@ -279,122 +280,53 @@ def main():
 
         for sub_i in range(args.iter_size):
 
-            # train with pixel map
+            # train with source
 
             _, batch = next(trainloader_iter)
-            images, labels, class_label_source, mask_weakly, _, name = batch
-       
+            images, labels, class_label_source, mask_weakly, _, name = batch       
             images = Variable(images).cuda(args.gpu)
             pred = model(images)
-    
             pred = interp(pred)
 
+            loss_seg = loss_calc(pred, labels, args.gpu)
+
+            num = torch.sum(mask_weakly[0][0]).data.item()
             class_label_source_lse = class_label_source.type(torch.FloatTensor)
             exp_source = torch.min(torch.exp(1*pred), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
-
-            lse  = (1.0/1) * torch.log(AvePool(exp_source))   
- 
-        #    print("amy,",lse[0][4])      
+            lse  = (1.0/1) * torch.log( (512*256/num) * AvePool(torch.exp(1*pred) * mask_weakly.type(torch.FloatTensor).cuda(args.gpu)))
             loss_lse_source = bce_loss(lse, Variable(class_label_source_lse.reshape(lse.size())).cuda(args.gpu))
-        #    print("fengmao,",class_label_source_lse.reshape(lse.size())[0][4])
-        #    print("renying,",loss_lse_source)
 
-         #   print("fengmao",lse)
-         #   print("amy",class_label_source)
-         #   print("renying",loss_lse_source)
+            # train with target
 
-            
             _, batch = next(targetloader_iter)
             images, class_label, _, _ = batch
             images = Variable(images).cuda(args.gpu)
             pred_target = model(images)  
             pred_target = interp(pred_target)
-
-            prob_tar = F.softmax(pred_target)
-            log_prob_tar = torch.log(prob_tar + 1e-45)
-            entropy_samples = - torch.sum(torch.mul(prob_tar, log_prob_tar)) / (input_size_target[0]*input_size_target[1])
+            pred_target_dropout = model(images)  
+            pred_target_dropout = interp(pred_target_dropout)
 
             class_label_target_lse = class_label.type(torch.FloatTensor)
             exp_target = torch.min(torch.exp(1*pred_target), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
             lse  = (1.0/1) * torch.log(AvePool(exp_target))
-            #print("fengmao,",lse)
             loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
 
+            Max_pred_target, indice = MaxPool(pred_target)
+            Max_pred_target_dropout, indice_dropout = MaxPool(Max_pred_target_dropout)
+            print("fengmao,",Max_pred_target.shape, indice.shape)
 
-            class_label_target = class_label.type(torch.FloatTensor)
-            class_label_target_reverse = (class_label == 0).type(torch.FloatTensor)
-          
-            mask_target = class_label
-            mask_target_reverse = class_label_target_reverse
+            loss =  loss_seg + 0.0 *  loss_lse_source + 0.2 * loss_lse_target
 
-            class_label_target = class_label_target * (SEQ-1).type(torch.FloatTensor)            
-          #  class_label_target_reverse = class_label_target_reverse * (SEQ-1).type(torch.FloatTensor)
-
-            pred_target_re = pred_target.reshape(pred_target.size()[0],pred_target.size()[1],pred_target.size()[2]*pred_target.size()[3])
-            pred_target_re = torch.t(Softmax(torch.t(pred_target_re.reshape(19,pred_target.size()[2]*pred_target.size()[3])))).reshape(1,19,pred_target.size()[2]*pred_target.size()[3])
-            pred_target_modification = pred_target_re.reshape(1,19,pred_target.size()[2],pred_target.size()[3])
-            instance_index = torch.max(pred_target_re,2)[1]
-
-            mask = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
-            mask_reverse = torch.zeros(pred_target_re.size()[0],19,pred_target_re.size()[2])
-         #   print("fengmao:",mask_target)
-         #   print("amy:",mask_target_reverse)
-            mask[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target.type(torch.float)
-            mask_reverse[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = mask_target_reverse.type(torch.float)
-
-            mask = mask.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-            mask_reverse = mask_reverse.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3]) == 1
-            
-            mask = torch.sum(mask,1)
-        #    mask_reverse = torch.sum(mask_reverse,1)
-
-            mask =(mask == 1) 
-        #    mask_reverse =(mask_reverse > 0)
-
-
-            labels_target = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
-           # labels_target_reverse = torch.zeros(pred_target_re.size()[0],pred_target_re.size()[1],pred_target_re.size()[2])
-
-            labels_target[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target
-           # labels_target_reverse[[torch.zeros(19).type(torch.long), SEQ-1, instance_index]] = class_label_target_reverse
-
-            labels_target = labels_target.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-           # labels_target_reverse = labels_target_reverse.reshape(pred_target.size()[0], pred_target.size()[1], pred_target.size()[2], pred_target.size()[3])
-
-            labels_target = torch.sum(labels_target, 1)
-          #  labels_target = torch.sum(labels_target, 1)
-
-            pred_target = pred_target.transpose(1, 2).transpose(2, 3).contiguous()
-            pred_target = pred_target[mask.view(1, 256, 512, 1).repeat(1, 1, 1, 19)].view(-1, 19)
-         
-            labels_target = labels_target[mask]
-            labels_target = Variable(labels_target.long())
-            labels_target.requires_grad = False   
-  
-            loss_weak = F.cross_entropy(pred_target, labels_target.cuda(args.gpu),size_average=True)          
-            loss_seg = loss_calc(pred, labels, args.gpu)
-            a = len(pred_target_modification[mask_reverse])
-         #   print(pred_target_modification[mask_reverse])
-         #   print(torch.log(1.000001 - pred_target_modification[mask_reverse]))
-            loss_neg = - (1/a) *  torch.sum(torch.log(1.000001 -  pred_target_modification[mask_reverse]))
-
-            loss =  loss_seg + 0.0 *  loss_weak + 0.0 * loss_neg + 0.00 *  loss_lse_source + 0.1 * loss_lse_target# + 0.1 * entropy_samples
-
-            # proper normalization
-            loss = loss / args.iter_size
             loss.backward()
             loss_seg_value += loss_seg.data.item() / args.iter_size
-            loss_weak_value += loss_weak.data.item() / args.iter_size
-            loss_neg_value += loss_neg.data.item() / args.iter_size
             loss_lse_source_value += loss_lse_source.data.item() / args.iter_size
             loss_lse_target_value += loss_lse_target.data.item() / args.iter_size
-            entropy_samples_value += entropy_samples.data.item() / args.iter_size
 
         optimizer.step()
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f} loss_weak = {3:.3f} loss_neg = {4:.3f} loss_lse_source = {5:.3f} loss_lse_target = {6:.3f} entropy_samples = {7:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_weak_value, loss_neg_value, loss_lse_source_value, loss_lse_target_value, entropy_samples_value))
+        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f} loss_lse_source = {3:.3f} loss_lse_target = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_lse_source_value, loss_lse_target_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')

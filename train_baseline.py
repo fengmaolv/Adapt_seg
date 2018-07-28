@@ -22,15 +22,15 @@ IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 4
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-INPUT_SIZE = '512,256'            ##########
+INPUT_SIZE = '1280,720'            ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
-INPUT_SIZE_TARGET = '512,256'     ##########
-COMPARE_SIZE = '512,256'     ##########
+INPUT_SIZE_TARGET = '1024,512'     ##########
+COMPARE_SIZE = '2048,1024'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
@@ -39,7 +39,7 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'pretrain.pth'       ##########
-SAVE_PRED_EVERY = 1000
+SAVE_PRED_EVERY = 1
 SNAPSHOT_DIR = './snapshots/train_baseline'   ##########
 RESULTS_DIR = './baseline.txt'                  ##########
 WEIGHT_DECAY = 0.0005
@@ -182,16 +182,16 @@ def main():
 
 ############################
 #validation data
-  #  testloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
- #                                   batch_size=1, shuffle=False, pin_memory=True)
- #   with open('./dataset/cityscapes_list/info.json', 'r') as fp:
- #       info = json.load(fp)
- #   mapping = np.array(info['label2train'], dtype=np.int)
- #   label_path_list = './dataset/cityscapes_list/label.txt'
- #   gt_imgs = open(label_path_list, 'r').read().splitlines()
- #   gt_imgs = [join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
+    testloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
+                                    batch_size=1, shuffle=False, pin_memory=True)
+    with open('./dataset/cityscapes_list/info.json', 'r') as fp:
+        info = json.load(fp)
+    mapping = np.array(info['label2train'], dtype=np.int)
+    label_path_list = './dataset/cityscapes_list/label.txt'
+    gt_imgs = open(label_path_list, 'r').read().splitlines()
+    gt_imgs = [join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
 
- #   interp_val = nn.Upsample(size=(com_size[1], com_size[0]), mode='bilinear')
+    interp_val = nn.Upsample(size=(com_size[1], com_size[0]), mode='bilinear')
 ############################
 
     cudnn.enabled = True
@@ -262,7 +262,7 @@ def main():
 
             loss_seg1 = loss_calc(pred1, labels, args.gpu)
             loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2 + args.lambda_seg * loss_seg1
+            loss = loss_seg2# + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
@@ -294,11 +294,13 @@ def main():
                 output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
                 pred = interp_val(output2)
                 pred = pred[0].permute(1,2,0)
+                print(pred.shape)
                 pred = torch.max(pred, 2)[1].byte()
                 pred = pred.data.cpu().numpy()
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)
+     #           print("fengmao",np.max(pred))
                 hist += fast_hist(label.flatten(), pred.flatten(), 19)
           
             mIoUs = per_class_iu(hist)

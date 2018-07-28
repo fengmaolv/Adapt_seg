@@ -12,7 +12,7 @@ from PIL import Image
 import json
 from os.path import join
 
-from model.deeplab_nomulti import Res_Deeplab   ##########
+from model.deeplab_multi_nomulti import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset import GTA5DataSet
 from dataset.cityscapes_dataset import cityscapesDataSet
@@ -20,7 +20,7 @@ from dataset.cityscapes_dataset import cityscapesDataSet
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 1
+BATCH_SIZE = 8
 ITER_SIZE = 1
 NUM_WORKERS = 1
 DATA_DIRECTORY = './data/GTA5'
@@ -39,9 +39,9 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = 'pretrain.pth'       ##########
-SAVE_PRED_EVERY = 1000
+SAVE_PRED_EVERY = 500
 SNAPSHOT_DIR = './snapshots/train_baseline_nomulti'   ##########
-RESULTS_DIR = './baseline.txt_nomulti'                  ##########
+RESULTS_DIR = './baseline_nomulti.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
@@ -241,7 +241,7 @@ def main():
     interp = nn.UpsamplingBilinear2d(size=(input_size[1], input_size[0]))
 
     for i_iter in range(args.num_steps):
-
+        model.train()
         loss_seg_value1 = 0
         loss_seg_value2 = 0
 
@@ -256,26 +256,26 @@ def main():
             images, labels, _, _ = batch
             images = Variable(images).cuda(args.gpu)
 
-            pred1, pred2 = model(images)
-            pred1 = interp(pred1)
+            pred2 = model(images)
+           # pred1 = interp(pred1)
             pred2 = interp(pred2)
 
-            loss_seg1 = loss_calc(pred1, labels, args.gpu)
+            #loss_seg1 = loss_calc(pred1, labels, args.gpu)
             loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2 + args.lambda_seg * loss_seg1
+            loss = loss_seg2# +* loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            loss_seg_value1 += loss_seg1.data.cpu().numpy()[0] / args.iter_size
-            loss_seg_value2 += loss_seg2.data.cpu().numpy()[0] / args.iter_size
+            #loss_seg_value1 += loss_seg1.data.item() / args.iter_size
+            loss_seg_value2 += loss_seg2.data.item() / args.iter_size
 
         optimizer.step()
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f} loss_seg2 = {3:.3f}'.format(
-            i_iter, args.num_steps, loss_seg_value1, loss_seg_value2))
+        'iter = {0:8d}/{1:8d} loss_seg = {2:.3f}'.format(
+            i_iter, args.num_steps, loss_seg_value2))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
@@ -284,6 +284,7 @@ def main():
 
         if i_iter % args.save_pred_every == 0 and i_iter != 0:
             print('taking snapshot ...')
+            model.eval()
             torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
             hist = np.zeros((19, 19))
             
@@ -291,7 +292,7 @@ def main():
             for index, batch in enumerate(testloader):
                 print(index)
                 image, _, name = batch
-                output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
+                output2 = model(Variable(image, volatile=True).cuda(args.gpu))
                 pred = interp_val(output2)
                 pred = pred[0].permute(1,2,0)
                 pred = torch.max(pred, 2)[1].byte()
@@ -299,6 +300,8 @@ def main():
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)
+     #           print("fengmao,",np.max(label),np.max(pred))
+
                 hist += fast_hist(label.flatten(), pred.flatten(), 19)
           
             mIoUs = per_class_iu(hist)

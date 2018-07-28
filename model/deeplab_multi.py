@@ -73,7 +73,7 @@ class Classifier_Module(nn.Module):
         self.conv2d_list = nn.ModuleList()
         for dilation, padding in zip(dilation_series, padding_series):
             self.conv2d_list.append(
-                nn.Conv2d(inplanes, 128, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=False))
+                nn.Conv2d(inplanes, 19, kernel_size=3, stride=1, padding=padding, dilation=dilation, bias=False))
 
         for m in self.conv2d_list:
             m.weight.data.normal_(0, 0.01)

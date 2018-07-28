@@ -28,7 +28,7 @@ from dataset.cityscapes_dataset import cityscapesDataSet
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 ITER_SIZE = 1
 NUM_WORKERS = 1
 DATA_DIRECTORY = './data/GTA5'
@@ -39,7 +39,8 @@ DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
 INPUT_SIZE_TARGET = '512,256'     ##########
 COMPARE_SIZE = '512,256'     ##########
-LEARNING_RATE = 2.5e-4
+#LEARNING_RATE = 2.5e-4
+LEARNING_RATE = 1e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
 NUM_STEPS = 250000
@@ -47,15 +48,13 @@ NUM_STEPS_STOP = 250000
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = './snapshots/model_baseline_dropout/GTA5_99000.pth'       ##########
-SAVE_PRED_EVERY = 1000
+SAVE_PRED_EVERY = 500
 SNAPSHOT_DIR = './snapshots/model_weakly_ASSP'   ##########
 RESULTS_DIR = './result_weakly_ASSP.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
-LAMBDA_SEG = 0.1
 LAMBDA_ADV_TARGET1 = 0.2
-LAMBDA_ADV_TARGET2 = 0.001
 
 SET = 'train'
 SET_VALIDATION = 'val'
@@ -96,11 +95,7 @@ def get_arguments():
                         help="Base learning rate for training with polynomial decay.")
     parser.add_argument("--learning-rate-D", type=float, default=LEARNING_RATE_D,
                         help="Base learning rate for discriminator.")
-    parser.add_argument("--lambda-seg", type=float, default=LAMBDA_SEG,
-                        help="lambda_seg.")
     parser.add_argument("--lambda-adv-target1", type=float, default=LAMBDA_ADV_TARGET1,
-                        help="lambda_adv for adversarial training.")
-    parser.add_argument("--lambda-adv-target2", type=float, default=LAMBDA_ADV_TARGET2,
                         help="lambda_adv for adversarial training.")
     parser.add_argument("--momentum", type=float, default=MOMENTUM,
                         help="Momentum component of the optimiser.")
@@ -150,6 +145,7 @@ def label_mapping(input, mapping):
     
 def fast_hist(a, b, n):
     k = (a >= 0) & (a < n)
+   # print(k.shape,np.max(n * a[k].astype(int) + b[k]))
     return np.bincount(n * a[k].astype(int) + b[k], minlength=n ** 2).reshape(n, n)
 
 def per_class_iu(hist):
@@ -295,83 +291,56 @@ def main():
         for sub_i in range(args.iter_size):
 
             # train G
-            # don't accumulate grads in D
             for param in model_D1.parameters():
                 param.requires_grad = False
-      
-            # train with source
                 
             _, batch = next(trainloader_iter)
-            images, labels, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-
-            pred1, feature = model(images)
+            images_source, labels, _, _ = batch
+            images_source = Variable(images_source).cuda(args.gpu)
+            pred1, feature = model(images_source)
             pred1 = interp(pred1)
-
             loss_seg1 = loss_calc(pred1, labels, args.gpu)
-            loss = loss_seg1
 
-            # proper normalization
-            loss = loss / args.iter_size
-            loss.backward()
-            loss_seg_value1 += loss_seg1.data.item() / args.iter_size
-
-            # train with target
+            D_out1 = model_D1(feature)
+            loss_D1_source = bce_loss(D_out1, Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(args.gpu))
 
             _, batch = next(targetloader_iter)
-            images, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
+            images_target, _, _ = batch
+            images_target = Variable(images_target).cuda(args.gpu)
 
-            pred_target1, feature_target = model(images)
-            pred_target1 = interp_target(pred_target1)
-
+            _, feature_target = model(images_target)
             D_out1 = model_D1(feature_target)
-            
-            loss_adv_target1 = bce_loss(D_out1,
-                                       Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(
-                                           args.gpu))
+            loss_D1_target = bce_loss(D_out1, Variable(torch.FloatTensor(D_out1.data.size()).fill_(target_label)).cuda(args.gpu))
 
-            loss = args.lambda_adv_target1 * loss_adv_target1 
-            loss = loss / args.iter_size
+            loss = loss_seg1  + args.lambda_adv_target1 * (-loss_D1_source - loss_D1_target)
             loss.backward()
-            loss_adv_target_value1 += loss_adv_target1.data.item() / args.iter_size
-        
-            # train D
+            loss_seg_value1 += loss_seg1.data.item()
+            loss_adv_target = loss_D1_source + loss_D1_target
+            loss_adv_target_value1 = loss_adv_target.data.item()
 
-            # bring back requires_grad
+            optimizer.step()
+
+            # train D
             for param in model_D1.parameters():
                 param.requires_grad = True
 
-            # train with source
+            pred1, feature = model(images_source)
             feature = feature.detach()
-
             D_out1 = model_D1(feature)
+            loss_D1_source = bce_loss(D_out1, Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(args.gpu))
 
-            loss_D1 = bce_loss(D_out1,
-                              Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(args.gpu))
-
-            loss_D1 = loss_D1 / args.iter_size / 2
-
-            loss_D1.backward()
-
-            loss_D_value1 += loss_D1.data.item()
-
-            # train with target
+            _, feature_target = model(images_target)
             feature_target = feature_target.detach()
-
             D_out1 = model_D1(feature_target)
+            loss_D1_target = bce_loss(D_out1, Variable(torch.FloatTensor(D_out1.data.size()).fill_(target_label)).cuda(args.gpu))
 
-            loss_D1 = bce_loss(D_out1,
-                              Variable(torch.FloatTensor(D_out1.data.size()).fill_(target_label)).cuda(args.gpu))
-
-            loss_D1 = loss_D1 / args.iter_size / 2
+            loss_D1 = loss_D1_source + loss_D1_target
 
             loss_D1.backward()
 
-            loss_D_value1 += loss_D1.data.item()
+            loss_D_value1 = loss_D1.data.item()
+            optimizer_D1.step()
 
-        optimizer.step()
-        optimizer_D1.step()
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
@@ -396,13 +365,15 @@ def main():
                 print(index)
                 image, _, name = batch
                 output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
-                pred = interp_val(output2)
+                pred = interp_val(output1)
                 pred = pred[0].permute(1,2,0)
+          #      print(pred.shape)
                 pred = torch.max(pred, 2)[1].byte()
                 pred = pred.data.cpu().numpy()
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)
+          #      print("fengmao,",np.max(label),np.max(pred))
                 hist += fast_hist(label.flatten(), pred.flatten(), 19)
           
             mIoUs = per_class_iu(hist)
