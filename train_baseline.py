@@ -20,17 +20,17 @@ from dataset.cityscapes_dataset import cityscapesDataSet
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 4
+BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 4
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-INPUT_SIZE = '512,256'            ##########
+INPUT_SIZE = '1280,720'            ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
-INPUT_SIZE_TARGET = '512,256'     ##########
-COMPARE_SIZE = '512,256'     ##########
+INPUT_SIZE_TARGET = '1024,512'     ##########
+COMPARE_SIZE = '2048,1024'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
@@ -262,7 +262,7 @@ def main():
 
             loss_seg1 = loss_calc(pred1, labels, args.gpu)
             loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2 + args.lambda_seg * loss_seg1
+            loss = loss_seg2# + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
