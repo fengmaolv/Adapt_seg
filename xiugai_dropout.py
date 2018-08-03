@@ -14,37 +14,40 @@ import os
 import os.path as osp
 import matplotlib.pyplot as plt
 import random
+from PIL import Image
+import json
 
-from model.deeplab_multi import Res_Deeplab
+from model.deeplab_multi_drop import Res_Deeplab          ##########
 from model.discriminator import FCDiscriminator
 from utils.loss import CrossEntropy2d
-from dataset.gta5_dataset import GTA5DataSet
-from dataset.cityscapes_dataset import cityscapesDataSet
+from dataset.gta5_dataset_weakly import GTA5DataSet
+from dataset.cityscapes_dataset_weakly import cityscapesDataSet
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 4
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
-DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-IGNORE_LABEL = 255
-INPUT_SIZE = '1280,720'
+DATA_LIST_PATH = './dataset/gta5_list/train.txt'	
+INPUT_SIZE = '1280,720'             ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
-INPUT_SIZE_TARGET = '1024,512'
+DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
+INPUT_SIZE_TARGET = '1024,512'           ##########
+COMPARE_SIZE = '2048,1024'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
 NUM_STEPS = 250000
-NUM_STEPS_STOP = 250000  # early stopping
+NUM_STEPS_STOP = 250000  # early stopping	
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = 'pretrain.pth'
-SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 2000
-SNAPSHOT_DIR = './snapshots/'
+RESTORE_FROM = 'pretrain.pth'          ##########
+SAVE_PRED_EVERY = 500
+SNAPSHOT_DIR = './snapshots/train_outspace_drop'            ##########
+RESULTS_DIR = './result_outspace_drop.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
@@ -52,9 +55,8 @@ LAMBDA_SEG = 0.1
 LAMBDA_ADV_TARGET1 = 0.0002
 LAMBDA_ADV_TARGET2 = 0.001
 
-TARGET = 'cityscapes'
 SET = 'train'
-
+SET_VALIDATION = 'val'
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -65,8 +67,6 @@ def get_arguments():
     parser = argparse.ArgumentParser(description="DeepLab-ResNet Network")
     parser.add_argument("--model", type=str, default=MODEL,
                         help="available options : DeepLab")
-    parser.add_argument("--target", type=str, default=TARGET,
-                        help="available options : cityscapes")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE,
                         help="Number of images sent to the network in one step.")
     parser.add_argument("--iter-size", type=int, default=ITER_SIZE,
@@ -77,14 +77,14 @@ def get_arguments():
                         help="Path to the directory containing the source dataset.")
     parser.add_argument("--data-list", type=str, default=DATA_LIST_PATH,
                         help="Path to the file listing the images in the source dataset.")
-    parser.add_argument("--ignore-label", type=int, default=IGNORE_LABEL,
-                        help="The index of the label to ignore during the training.")
     parser.add_argument("--input-size", type=str, default=INPUT_SIZE,
                         help="Comma-separated string with height and width of source images.")
     parser.add_argument("--data-dir-target", type=str, default=DATA_DIRECTORY_TARGET,
                         help="Path to the directory containing the target dataset.")
     parser.add_argument("--data-list-target", type=str, default=DATA_LIST_PATH_TARGET,
                         help="Path to the file listing the images in the target dataset.")
+    parser.add_argument("--data-list-target-val", type=str, default=DATA_LIST_PATH_TARGET_VALIDATION,
+                        help="Path to the file listing the images in the target dataset for validation.")                       
     parser.add_argument("--input-size-target", type=str, default=INPUT_SIZE_TARGET,
                         help="Comma-separated string with height and width of target images.")
     parser.add_argument("--is-training", action="store_true",
@@ -119,8 +119,6 @@ def get_arguments():
                         help="Random seed to have reproducible results.")
     parser.add_argument("--restore-from", type=str, default=RESTORE_FROM,
                         help="Where restore model parameters from.")
-    parser.add_argument("--save-num-images", type=int, default=SAVE_NUM_IMAGES,
-                        help="How many images to save.")
     parser.add_argument("--save-pred-every", type=int, default=SAVE_PRED_EVERY,
                         help="Save summaries and checkpoint every often.")
     parser.add_argument("--snapshot-dir", type=str, default=SNAPSHOT_DIR,
@@ -131,6 +129,13 @@ def get_arguments():
                         help="choose gpu device.")
     parser.add_argument("--set", type=str, default=SET,
                         help="choose adaptation set.")
+    parser.add_argument("--set-val", type=str, default=SET_VALIDATION,
+                        help="choose validation set.")           
+    parser.add_argument("--results-dir", type=str, default=RESULTS_DIR,
+                        help="choose adaptation set.")        
+    parser.add_argument("--com-size", type=str, default=COMPARE_SIZE,
+                        help="choose adaptation set.")        
+
     return parser.parse_args()
 
 
@@ -166,6 +171,19 @@ def adjust_learning_rate_D(optimizer, i_iter):
     if len(optimizer.param_groups) > 1:
         optimizer.param_groups[1]['lr'] = lr * 10
 
+def label_mapping(input, mapping):
+    output = np.copy(input)
+    for ind in range(len(mapping)):
+        output[input == mapping[ind][0]] = mapping[ind][1]
+    return np.array(output, dtype=np.int64)
+
+def fast_hist(a, b, n):
+    k = (a >= 0) & (a < n)
+    return np.bincount(n * a[k].astype(int) + b[k], minlength=n ** 2).reshape(n, n)
+
+def per_class_iu(hist):
+    return np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist))
+
 
 def main():
     """Create the model and start the training."""
@@ -176,8 +194,25 @@ def main():
     w, h = map(int, args.input_size_target.split(','))
     input_size_target = (w, h)
 
+    h, w = map(int, args.com_size.split(','))
+    com_size = (h, w)
+
+############################
+#validation data
+    testloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
+                                    batch_size=1, shuffle=False, pin_memory=True)
+    with open('./dataset/cityscapes_list/info.json', 'r') as fp:
+        info = json.load(fp)
+    mapping = np.array(info['label2train'], dtype=np.int)
+    label_path_list = './dataset/cityscapes_list/label.txt'
+    gt_imgs = open(label_path_list, 'r').read().splitlines()
+    gt_imgs = [osp.join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
+
+    interp_val = nn.UpsamplingBilinear2d(size=(com_size[1], com_size[0]))
+
+############################
+
     cudnn.enabled = True
-    gpu = args.gpu
 
     # Create network
     if args.model == 'DeepLab':
@@ -254,9 +289,11 @@ def main():
     # labels for adversarial training
     source_label = 0
     target_label = 1
+    AvePool = torch.nn.AvgPool2d(kernel_size=(512,1024))
 
     for i_iter in range(args.num_steps):
-
+      
+        loss_lse_target_value = 0
         loss_seg_value1 = 0
         loss_adv_target_value1 = 0
         loss_D_value1 = 0
@@ -287,7 +324,7 @@ def main():
             # train with source
 
             _, batch = next(trainloader_iter)
-            images, labels, _, _ = batch
+            images, labels, class_label_source, mask_weakly, _, name = batch
             images = Variable(images).cuda(args.gpu)
 
             pred1, pred2 = model(images)
@@ -307,12 +344,17 @@ def main():
             # train with target
 
             _, batch = next(targetloader_iter)
-            images, _, _ = batch
+            images, class_label,  _, _ = batch
             images = Variable(images).cuda(args.gpu)
 
             pred_target1, pred_target2 = model(images)
             pred_target1 = interp_target(pred_target1)
             pred_target2 = interp_target(pred_target2)
+
+        #    class_label_target_lse = class_label.type(torch.FloatTensor)
+        #    exp_target = torch.min(torch.exp(1*pred_target2), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
+        #    lse  = (1.0/1) * torch.log(AvePool(exp_target))
+        #    loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
 
             D_out1 = model_D1(F.softmax(pred_target1))
             D_out2 = model_D2(F.softmax(pred_target2))
@@ -325,12 +367,12 @@ def main():
                                         Variable(torch.FloatTensor(D_out2.data.size()).fill_(source_label)).cuda(
                                             args.gpu))
 
-            loss = args.lambda_adv_target1 * loss_adv_target1 + args.lambda_adv_target2 * loss_adv_target2
+            loss = args.lambda_adv_target1 * loss_adv_target1 + args.lambda_adv_target2 * loss_adv_target2#  + 0.2 * loss_lse_target
             loss = loss / args.iter_size
             loss.backward()
             loss_adv_target_value1 += loss_adv_target1.data.item() / args.iter_size
             loss_adv_target_value2 += loss_adv_target2.data.item() / args.iter_size
-
+         #   loss_lse_target_value += loss_lse_target.data.item() / args.iter_size
             # train D
 
             # bring back requires_grad
@@ -379,7 +421,7 @@ def main():
             loss_D2 = loss_D2 / args.iter_size / 2
 
             loss_D1.backward()
-            loss_D2.backward()
+            loss_D2.backward()           
 
             loss_D_value1 += loss_D1.data.item()
             loss_D_value2 += loss_D2.data.item()
@@ -387,11 +429,11 @@ def main():
         optimizer.step()
         optimizer_D1.step()
         optimizer_D2.step()
+        del D_out1, D_out2, pred1, pred2, pred_target1, pred_target2, images, labels        
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f} loss_seg2 = {3:.3f} loss_adv1 = {4:.3f}, loss_adv2 = {5:.3f} loss_D1 = {6:.3f} loss_D2 = {7:.3f}'.format(
-            i_iter, args.num_steps, loss_seg_value1, loss_seg_value2, loss_adv_target_value1, loss_adv_target_value2, loss_D_value1, loss_D_value2))
+        'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f} loss_seg2 = {3:.3f} loss_adv1 = {4:.3f}, loss_adv2 = {5:.3f} loss_D1 = {6:.3f} loss_D2 = {7:.3f} loss_lse_target = {8:.3f}'.format(i_iter, args.num_steps, loss_seg_value1, loss_seg_value2, loss_adv_target_value1, loss_adv_target_value2, loss_D_value1, loss_D_value2, loss_lse_target_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
@@ -403,8 +445,29 @@ def main():
         if i_iter % args.save_pred_every == 0 and i_iter != 0:
             print('taking snapshot ...')
             torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
-            torch.save(model_D1.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '_D1.pth'))
-            torch.save(model_D2.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '_D2.pth'))
+            hist = np.zeros((19, 19))
+     #       model.cuda(0)
+            f = open(args.results_dir, 'a')
+            for index, batch in enumerate(testloader):
+                print(index)
+                image, _, _, name = batch
+                output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
+                pred = interp_val(output2)
+                pred = pred[0].permute(1,2,0)
+                pred = torch.max(pred, 2)[1].byte()
+                pred_cpu = pred.data.cpu().numpy()
+                del pred, output1, output2
+                label = Image.open(gt_imgs[index])
+                label = np.array(label.resize(com_size, Image.NEAREST))
+                label = label_mapping(label, mapping)
+                hist += fast_hist(label.flatten(), pred_cpu.flatten(), 19)
+      #      model.cuda(args.gpu)     
+            mIoUs = per_class_iu(hist)
+            mIoU = round(np.nanmean(mIoUs) * 100, 2)
+            print(mIoU)
+            f.write('i_iter:{:d},        miou:{:0.5f} \n'.format(i_iter,mIoU))
+            f.close()
+
 
 
 if __name__ == '__main__':

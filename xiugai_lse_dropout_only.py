@@ -3,47 +3,52 @@ import torch
 import torch.nn as nn
 from torch.utils import data, model_zoo
 import numpy as np
+import pickle
 from torch.autograd import Variable
 import torch.optim as optim
+import scipy.misc
 import torch.backends.cudnn as cudnn
+import torch.nn.functional as F
+import sys
 import os
 import os.path as osp
+import matplotlib.pyplot as plt
+import random
 from PIL import Image
 import json
-from os.path import join
 
-from model.deeplab_multi_nomulti import Res_Deeplab   ##########
+from model.deeplab_multi_drop import Res_Deeplab          ##########
+from model.discriminator import FCDiscriminator
 from utils.loss import CrossEntropy2d
-from dataset.gta5_dataset import GTA5DataSet
-from dataset.cityscapes_dataset import cityscapesDataSet
+from dataset.gta5_dataset_weakly import GTA5DataSet
+from dataset.cityscapes_dataset_weakly import cityscapesDataSet
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 
 MODEL = 'DeepLab'
-BATCH_SIZE = 8
+BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 1
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
-DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-INPUT_SIZE = '512,256'            ##########
+DATA_LIST_PATH = './dataset/gta5_list/train.txt'	
+INPUT_SIZE = '1280,720'             ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
-INPUT_SIZE_TARGET = '512,256'     ##########
-COMPARE_SIZE = '512,256'     ##########
+INPUT_SIZE_TARGET = '1024,512'           ##########
+COMPARE_SIZE = '2048,1024'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
 NUM_STEPS = 250000
-NUM_STEPS_STOP = 250000      
+NUM_STEPS_STOP = 250000  # early stopping	
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = 'pretrain.pth'       ##########
+RESTORE_FROM = 'snapshots/train_lse_drop_only/GTA5_12000.pth'          ##########
 SAVE_PRED_EVERY = 500
-SNAPSHOT_DIR = './snapshots/train_baseline_nomulti'   ##########
-RESULTS_DIR = './baseline_nomulti.txt'                  ##########
+SNAPSHOT_DIR = './snapshots/train_lse_drop_only'            ##########
+RESULTS_DIR = './result_lse_drop_only.txt'                  ##########
 WEIGHT_DECAY = 0.0005
-
 LEARNING_RATE_D = 1e-4
 LAMBDA_SEG = 0.1
 LAMBDA_ADV_TARGET1 = 0.0002
@@ -51,7 +56,6 @@ LAMBDA_ADV_TARGET2 = 0.001
 
 SET = 'train'
 SET_VALIDATION = 'val'
-
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -129,23 +133,13 @@ def get_arguments():
     parser.add_argument("--results-dir", type=str, default=RESULTS_DIR,
                         help="choose adaptation set.")        
     parser.add_argument("--com-size", type=str, default=COMPARE_SIZE,
-                        help="choose adaptation set.")                   
+                        help="choose adaptation set.")        
+
     return parser.parse_args()
+
 
 args = get_arguments()
 
-def label_mapping(input, mapping):
-    output = np.copy(input)
-    for ind in range(len(mapping)):
-        output[input == mapping[ind][0]] = mapping[ind][1]
-    return np.array(output, dtype=np.int64)
-    
-def fast_hist(a, b, n):
-    k = (a >= 0) & (a < n)
-    return np.bincount(n * a[k].astype(int) + b[k], minlength=n ** 2).reshape(n, n)
-
-def per_class_iu(hist):
-    return np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist))
 
 def loss_calc(pred, label, gpu):
     """
@@ -169,16 +163,38 @@ def adjust_learning_rate(optimizer, i_iter):
     if len(optimizer.param_groups) > 1:
         optimizer.param_groups[1]['lr'] = lr * 10
 
+
+def adjust_learning_rate_D(optimizer, i_iter):
+    lr = lr_poly(args.learning_rate_D, i_iter, args.num_steps, args.power)
+    optimizer.param_groups[0]['lr'] = lr
+    if len(optimizer.param_groups) > 1:
+        optimizer.param_groups[1]['lr'] = lr * 10
+
+def label_mapping(input, mapping):
+    output = np.copy(input)
+    for ind in range(len(mapping)):
+        output[input == mapping[ind][0]] = mapping[ind][1]
+    return np.array(output, dtype=np.int64)
+
+def fast_hist(a, b, n):
+    k = (a >= 0) & (a < n)
+    return np.bincount(n * a[k].astype(int) + b[k], minlength=n ** 2).reshape(n, n)
+
+def per_class_iu(hist):
+    return np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist))
+
+
 def main():
     """Create the model and start the training."""
 
-    h, w = map(int, args.input_size.split(','))
-    input_size = (h, w)
+    w, h = map(int, args.input_size.split(','))
+    input_size = (w, h)
+
+    w, h = map(int, args.input_size_target.split(','))
+    input_size_target = (w, h)
 
     h, w = map(int, args.com_size.split(','))
     com_size = (h, w)
-
-
 
 ############################
 #validation data
@@ -189,37 +205,48 @@ def main():
     mapping = np.array(info['label2train'], dtype=np.int)
     label_path_list = './dataset/cityscapes_list/label.txt'
     gt_imgs = open(label_path_list, 'r').read().splitlines()
-    gt_imgs = [join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
+    gt_imgs = [osp.join('./data/Cityscapes/data/gtFine/val', x) for x in gt_imgs]
 
     interp_val = nn.UpsamplingBilinear2d(size=(com_size[1], com_size[0]))
 
 ############################
 
     cudnn.enabled = True
-
+    gpu = args.gpu
     # Create network
+#    if args.model == 'DeepLab':
+#        model = Res_Deeplab(num_classes=args.num_classes)
+#        saved_state_dict = torch.load(args.restore_from)
+#
+#        new_params = model.state_dict().copy()
+#        for i in saved_state_dict:
+#            # Scale.layer5.conv2d_list.3.weight
+#            i_parts = i.split('.')
+#            # print i_parts
+#            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
+#                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+#                # print i_parts
+#        model.load_state_dict(new_params)
+
     if args.model == 'DeepLab':
         model = Res_Deeplab(num_classes=args.num_classes)
-        if args.restore_from[:4] == 'http' :
-            saved_state_dict = model_zoo.load_url(args.restore_from)
-        else:
-            saved_state_dict = torch.load(args.restore_from)
-
-        new_params = model.state_dict().copy()
-        for i in saved_state_dict:
-            # Scale.layer5.conv2d_list.3.weight
-            i_parts = i.split('.')
-            # print i_parts
-            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
-                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
-                # print i_parts
-        model.load_state_dict(new_params)
-
+        saved_state_dict = torch.load(args.restore_from,map_location=lambda storage, loc: storage.cuda(args.gpu))
+        model.load_state_dict(saved_state_dict)
 
     model.train()
     model.cuda(args.gpu)
 
     cudnn.benchmark = True
+
+    # init D
+    model_D1 = FCDiscriminator(num_classes=args.num_classes)
+    model_D2 = FCDiscriminator(num_classes=args.num_classes)
+
+    model_D1.train()
+    model_D1.cuda(args.gpu)
+
+    model_D2.train()
+    model_D2.cuda(args.gpu)
 
     if not os.path.exists(args.snapshot_dir):
         os.makedirs(args.snapshot_dir)
@@ -232,84 +259,227 @@ def main():
 
     trainloader_iter = enumerate(trainloader)
 
+    targetloader = data.DataLoader(cityscapesDataSet(args.data_dir_target, args.data_list_target,
+                                                     max_iters=args.num_steps * args.iter_size * args.batch_size,
+                                                     crop_size=input_size_target,
+                                                     scale=False, mirror=args.random_mirror, mean=IMG_MEAN,
+                                                     set=args.set),
+                                   batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
+                                   pin_memory=True)
+
+
+    targetloader_iter = enumerate(targetloader)
+
     # implement model.optim_parameters(args) to handle different models' lr setting
 
     optimizer = optim.SGD(model.optim_parameters(args),
                           lr=args.learning_rate, momentum=args.momentum, weight_decay=args.weight_decay)
     optimizer.zero_grad()
 
-    interp = nn.UpsamplingBilinear2d(size=(input_size[1], input_size[0]))
+    optimizer_D1 = optim.Adam(model_D1.parameters(), lr=args.learning_rate_D, betas=(0.9, 0.99))
+    optimizer_D1.zero_grad()
+
+    optimizer_D2 = optim.Adam(model_D2.parameters(), lr=args.learning_rate_D, betas=(0.9, 0.99))
+    optimizer_D2.zero_grad()
+
+    bce_loss = torch.nn.BCEWithLogitsLoss()
+
+    interp = nn.Upsample(size=(input_size[1], input_size[0]), mode='bilinear')
+    interp_target = nn.Upsample(size=(input_size_target[1], input_size_target[0]), mode='bilinear')
+
+    # labels for adversarial training
+    source_label = 0
+    target_label = 1
+    AvePool = torch.nn.AvgPool2d(kernel_size=(512,1024))
 
     for i_iter in range(args.num_steps):
         model.train()
+        loss_lse_target_two_value = 0   
+        loss_lse_target_value = 0
         loss_seg_value1 = 0
+        loss_adv_target_value1 = 0
+        loss_D_value1 = 0
+
         loss_seg_value2 = 0
+        loss_adv_target_value2 = 0
+        loss_D_value2 = 0
 
         optimizer.zero_grad()
         adjust_learning_rate(optimizer, i_iter)
+
+        optimizer_D1.zero_grad()
+        optimizer_D2.zero_grad()
+        adjust_learning_rate_D(optimizer_D1, i_iter)
+        adjust_learning_rate_D(optimizer_D2, i_iter)
 
         for sub_i in range(args.iter_size):
 
             # train G
 
+            # don't accumulate grads in D
+            for param in model_D1.parameters():
+                param.requires_grad = False
+
+            for param in model_D2.parameters():
+                param.requires_grad = False
+
+            # train with source
+
             _, batch = next(trainloader_iter)
-            images, labels, _, _ = batch
+            images, labels, class_label_source, mask_weakly, _, name = batch
             images = Variable(images).cuda(args.gpu)
 
-            pred2 = model(images)
-           # pred1 = interp(pred1)
+            pred1, pred2 = model(images)
+            pred1 = interp(pred1)
             pred2 = interp(pred2)
 
-            #loss_seg1 = loss_calc(pred1, labels, args.gpu)
+   #         loss_seg1 = loss_calc(pred1, labels, args.gpu)
             loss_seg2 = loss_calc(pred2, labels, args.gpu)
-            loss = loss_seg2# +* loss_seg1
+            loss = loss_seg2# + args.lambda_seg * loss_seg1
 
             # proper normalization
             loss = loss / args.iter_size
             loss.backward()
-            #loss_seg_value1 += loss_seg1.data.item() / args.iter_size
+          #  loss_seg_value1 += loss_seg1.data.item() / args.iter_size
             loss_seg_value2 += loss_seg2.data.item() / args.iter_size
 
+            # train with target
+
+            _, batch = next(targetloader_iter)
+            images, class_label,  _, _ = batch
+            images = Variable(images).cuda(args.gpu)
+
+            pred_target1, pred_target2 = model(images)
+          #  pred_target1 = interp_target(pred_target1)
+            pred_target2 = interp_target(pred_target2)
+
+            class_label_target_lse = class_label.type(torch.FloatTensor)
+            exp_target = torch.min(torch.exp(1*pred_target2), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
+            lse  = (1.0/1) * torch.log(AvePool(exp_target))
+            loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
+
+     #       exp_target = torch.min(torch.exp(1*pred_target1), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
+     #       lse  = (1.0/1) * torch.log(AvePool(exp_target))
+     #       loss_lse_target_two = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
+
+
+      #      D_out1 = model_D1(F.softmax(pred_target1))
+      #      D_out2 = model_D2(F.softmax(pred_target2))
+
+       #     loss_adv_target1 = bce_loss(D_out1,
+        #                               Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(
+         #                                  args.gpu))
+
+#            loss_adv_target2 = bce_loss(D_out2,
+ #                                       Variable(torch.FloatTensor(D_out2.data.size()).fill_(source_label)).cuda(
+  #                                          args.gpu))
+
+
+            loss = 0.2 * loss_lse_target# + 0.02 * loss_lse_target_two
+            loss = loss / args.iter_size
+            loss.backward()
+           # loss_adv_target_value1 += loss_adv_target1.data.item() / args.iter_size
+           # loss_adv_target_value2 += loss_adv_target2.data.item() / args.iter_size
+            loss_lse_target_value += loss_lse_target.data.item() / args.iter_size
+          #  loss_lse_target_two_value += loss_lse_target_two.data.item() / args.iter_size
+
+            # train D
+
+            # bring back requires_grad
+            #for param in model_D1.parameters():
+           #     param.requires_grad = True
+
+          #  for param in model_D2.parameters():
+         #       param.requires_grad = True
+
+            # train with source
+        #    pred1 = pred1.detach()
+       #     pred2 = pred2.detach()
+
+      #      D_out1 = model_D1(F.softmax(pred1))
+            #D_out2 = model_D2(F.softmax(pred2))
+
+           # loss_D1 = bce_loss(D_out1,
+          #                    Variable(torch.FloatTensor(D_out1.data.size()).fill_(source_label)).cuda(args.gpu))
+
+         #   loss_D2 = bce_loss(D_out2,
+        #                       Variable(torch.FloatTensor(D_out2.data.size()).fill_(source_label)).cuda(args.gpu))
+
+       #     loss_D1 = loss_D1 / args.iter_size / 2
+      #      loss_D2 = loss_D2 / args.iter_size / 2
+
+           # loss_D1.backward()
+          #  loss_D2.backward()
+
+         #   loss_D_value1 += loss_D1.data.item()
+        #    loss_D_value2 += loss_D2.data.item()
+
+            # train with target
+       #     pred_target1 = pred_target1.detach()
+      #      pred_target2 = pred_target2.detach()
+
+     #       D_out1 = model_D1(F.softmax(pred_target1))
+    #        D_out2 = model_D2(F.softmax(pred_target2))
+
+   #         loss_D1 = bce_loss(D_out1,
+             #                 Variable(torch.FloatTensor(D_out1.data.size()).fill_(target_label)).cuda(args.gpu))
+
+            #loss_D2 = bce_loss(D_out2,
+           #                    Variable(torch.FloatTensor(D_out2.data.size()).fill_(target_label)).cuda(args.gpu))
+
+         #   loss_D1 = loss_D1 / args.iter_size / 2
+          #  loss_D2 = loss_D2 / args.iter_size / 2
+
+           # loss_D1.backward()
+          #  loss_D2.backward()           
+
+         #   loss_D_value1 += loss_D1.data.item()
+        #    loss_D_value2 += loss_D2.data.item()
+
         optimizer.step()
+      #  optimizer_D1.step()
+      #  optimizer_D2.step()
+        del pred1, pred2, pred_target1, pred_target2, images, labels        
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d} loss_seg = {2:.3f}'.format(
-            i_iter, args.num_steps, loss_seg_value2))
+        'iter = {0:8d}/{1:8d}, loss_seg1 = {2:.3f} loss_seg2 = {3:.3f} loss_adv1 = {4:.3f}, loss_adv2 = {5:.3f} loss_D1 = {6:.3f} loss_D2 = {7:.3f} loss_lse_target = {8:.3f} loss_lse_target2 = {9:.3f}'.format(i_iter, args.num_steps, loss_seg_value1, loss_seg_value2, loss_adv_target_value1, loss_adv_target_value2, loss_D_value1, loss_D_value2, loss_lse_target_value,loss_lse_target_two_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
-            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
+            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(args.num_steps_stop) + '.pth'))
+            torch.save(model_D1.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(args.num_steps_stop) + '_D1.pth'))
+            torch.save(model_D2.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(args.num_steps_stop) + '_D2.pth'))
             break
 
         if i_iter % args.save_pred_every == 0 and i_iter != 0:
             print('taking snapshot ...')
-            model.eval()
             torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
             hist = np.zeros((19, 19))
-            
+            model.eval()
+     #       model.cuda(0)
             f = open(args.results_dir, 'a')
             for index, batch in enumerate(testloader):
                 print(index)
-                image, _, name = batch
-                output2 = model(Variable(image, volatile=True).cuda(args.gpu))
+                image, _, _, name = batch
+                output1, output2 = model(Variable(image, volatile=True).cuda(args.gpu))
                 pred = interp_val(output2)
                 pred = pred[0].permute(1,2,0)
                 pred = torch.max(pred, 2)[1].byte()
-                pred = pred.data.cpu().numpy()
+                pred_cpu = pred.data.cpu().numpy()
+                del pred, output1, output2
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)
-     #           print("fengmao,",np.max(label),np.max(pred))
-
-                hist += fast_hist(label.flatten(), pred.flatten(), 19)
-          
+                hist += fast_hist(label.flatten(), pred_cpu.flatten(), 19)
+      #      model.cuda(args.gpu)     
             mIoUs = per_class_iu(hist)
             mIoU = round(np.nanmean(mIoUs) * 100, 2)
             print(mIoU)
             f.write('i_iter:{:d},        miou:{:0.5f} \n'.format(i_iter,mIoU))
             f.close()
 
-            
+
+
 if __name__ == '__main__':
     main()

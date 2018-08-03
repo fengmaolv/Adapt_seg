@@ -22,7 +22,6 @@ def conv3x3(in_planes, out_planes, stride=1):
 
 class Bottleneck(nn.Module):
     expansion = 4
-
     def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False)  # change
@@ -43,6 +42,7 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
+ #       self.IN = nn.InstanceNorm2d(planes*4)
 
     def forward(self, x):
         residual = x
@@ -60,10 +60,60 @@ class Bottleneck(nn.Module):
 
         if self.downsample is not None:
             residual = self.downsample(x)
-
         out += residual
+#        out = self.IN(out)
+        out = self.relu(out)
+        return out
+
+
+class Bottleneck_IN(nn.Module):
+    expansion = 4
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None):
+        super(Bottleneck_IN, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, stride=stride, bias=False)  # change
+        self.bn1 = nn.BatchNorm2d(planes, affine=affine_par)
+        for i in self.bn1.parameters():
+            i.requires_grad = False
+        self.In1 = nn.InstanceNorm2d(planes)
+
+        padding = dilation
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1,  # change
+                               padding=padding, bias=False, dilation=dilation)
+        self.bn2 = nn.BatchNorm2d(planes, affine=affine_par)
+        for i in self.bn2.parameters():
+            i.requires_grad = False
+        self.In2 = nn.InstanceNorm2d(planes)
+
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(planes * 4, affine=affine_par)
+        for i in self.bn3.parameters():
+            i.requires_grad = False
+        self.In3 = nn.InstanceNorm2d(planes*4)
+
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+       # self.IN = nn.InstanceNorm2d(planes*4)
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.In1(out)
         out = self.relu(out)
 
+        out = self.conv2(out)
+        out = self.In2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.In3(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+        out += residual
+       # out = self.IN(out)
+        out = self.relu(out)
         return out
 
 
@@ -77,7 +127,7 @@ class Classifier_Module(nn.Module):
 
       #  for m in self.conv2d_list:
        #     m.weight.data.normal_(0, 0.01)
-        self.drop = nn.Dropout(0.3)
+        self.drop = nn.Dropout(0.5)
         self.conv = nn.Conv2d(inplanes, num_classes, kernel_size=1, stride=1, padding=0, bias=True) 
         self.conv.weight.data.normal_(0, 0.01)       
  #       self.bn_map = nn.BatchNorm2d(128, affine=affine_par)
@@ -102,7 +152,7 @@ class Classifier_Module(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes):
+    def __init__(self, block,block_IN, layers, num_classes):
         self.inplanes = 64
         super(ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
@@ -110,10 +160,15 @@ class ResNet(nn.Module):
         self.bn1 = nn.BatchNorm2d(64, affine=affine_par)
         for i in self.bn1.parameters():
             i.requires_grad = False
+        self.In1 = nn.InstanceNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
+      #  self.relu1 = nn.ReLU(inplace=True)
+       # self.relu2 = nn.ReLU(inplace=True)
+       # self.relu3 = nn.ReLU(inplace=True)
+       # self.relu4 = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1, ceil_mode=True)  # change
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        self.layer1 = self._make_layer(block_IN, 64, layers[0])
+        self.layer2 = self._make_layer(block_IN, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=1, dilation=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=1, dilation=4)
         self.layer5 = self._make_pred_layer(Classifier_Module, 1024, [6, 12, 18, 24], [6, 12, 18, 24], num_classes)
@@ -151,16 +206,21 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
-        x = self.bn1(x)
+      #  x = self.bn1(x)
+        x = self.In1(x)
         x = self.relu(x)
         x = self.maxpool(x)
         x = self.layer1(x)
+      #  x = self.In2(x)
+      #  x = self.relu1(x)
         x = self.layer2(x)
-
+      #  x = self.In3(x)
+      #  x = self.relu2(x)
         x = self.layer3(x)
-   #     x1 = self.layer5(x)
-
+      #  x = self.relu3(x)
+      #  x1 = self.layer5(x)
         x2  = self.layer4(x)
+     #   x = self.relu4(x)
         x2 = self.layer6(x2)
         
         return x2
@@ -211,6 +271,7 @@ class ResNet(nn.Module):
 
 
 def Res_Deeplab(num_classes=21):
-    model = ResNet(Bottleneck, [3, 4, 23, 3], num_classes)
+    model = ResNet(Bottleneck, Bottleneck_IN, [3, 4, 23, 3], num_classes)
+
     return model
 

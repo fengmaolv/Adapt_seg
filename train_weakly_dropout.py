@@ -27,7 +27,7 @@ SEQ = torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]])
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 1
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
 INPUT_SIZE = '512,256'            ##########
@@ -186,6 +186,9 @@ def main():
     h, w = map(int, args.input_size_target.split(','))
     input_size_target = (h, w)
 
+    torch.cuda.set_device(args.gpu)
+
+
 ############################
 #validation data
     testloader = data.DataLoader(dataset.cityscapes_dataset.cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
@@ -210,7 +213,7 @@ def main():
      #   if args.restore_from[:4] == 'http' :
      #       saved_state_dict = model_zoo.load_url(args.restore_from)
      #   else:
-        saved_state_dict = torch.load(args.restore_from)
+        saved_state_dict = torch.load(args.restore_from, map_location=lambda storage, loc: storage.cuda(args.gpu))
 
         #new_params = model.state_dict().copy()
      #   for i in saved_state_dict:
@@ -225,6 +228,12 @@ def main():
 
     model.train()
     model.cuda(args.gpu)
+
+   # print(model.bn1.running_var)
+ #   print(model.bn1.running_var,model.bn1.running_mean,model.bn1.weight,model.bn1.bias)
+
+#    for parameter in model.bn1.parameters():
+#        print(parameter.name,parameter.data)
 
     cudnn.benchmark = True
 
@@ -311,9 +320,9 @@ def main():
             lse  = (1.0/1) * torch.log(AvePool(exp_target))
             loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
 
-            Max_pred_target, indice = MaxPool(pred_target)
-            Max_pred_target_dropout, indice_dropout = MaxPool(Max_pred_target_dropout)
-            print("fengmao,",Max_pred_target.shape, indice.shape)
+          #  Max_pred_target, indice = MaxPool(pred_target)
+          #  Max_pred_target_dropout, indice_dropout = MaxPool(Max_pred_target_dropout)
+          #  print("fengmao,",Max_pred_target.shape, indice.shape)
 
             loss =  loss_seg + 0.0 *  loss_lse_source + 0.2 * loss_lse_target
 
@@ -336,7 +345,7 @@ def main():
         if i_iter % args.save_pred_every == 0 and i_iter != 0:
             print('taking snapshot ...')
             model.eval()
-            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
+            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + '.pth'))
             hist = np.zeros((19, 19))
             
             f = open(args.results_dir, 'a')

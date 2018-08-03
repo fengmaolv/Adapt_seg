@@ -12,7 +12,7 @@ from PIL import Image
 import json
 from os.path import join
 
-from model.deeplab_multi import Res_Deeplab   ##########
+from model.deeplab_multi_dropout import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset import GTA5DataSet
 from dataset.cityscapes_dataset import cityscapesDataSet

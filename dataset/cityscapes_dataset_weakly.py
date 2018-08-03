@@ -21,20 +21,20 @@ class cityscapesDataSet(data.Dataset):
         self.is_mirror = mirror
         # self.mean_bgr = np.array([104.00698793, 116.66876762, 122.67891434])
         self.img_ids = [i_id.strip() for i_id in open(list_path)]
-        print("fengmao",len(self.img_ids))
+  #      print("fengmao",len(self.img_ids))
         if not max_iters==None:
             self.img_ids = self.img_ids * int(np.ceil(float(max_iters) / len(self.img_ids)))
-        print("fengmao1",len(self.img_ids))
+   #     print("fengmao1",len(self.img_ids))
         self.files = []
         self.set = set
 
         # for split in ["train", "trainval", "val"]:
         with open('./dataset/cityscapes_weakLabel_19class', 'rb') as fp:
             itemlist = pickle.load(fp)
-        print("test",len(itemlist))
+    #    print("test",len(itemlist))
         itemlist = itemlist * int(np.ceil(len(self.img_ids)/len(itemlist)))
 
-        print("test1",len(itemlist))
+     #   print("test1",len(itemlist))
         count = 0
         for name in self.img_ids:
             img_file = osp.join(self.root, "leftImg8bit/%s/%s" % (self.set, name))

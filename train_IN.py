@@ -13,13 +13,11 @@ import json
 from os.path import join
 import torch.nn.functional as F
 
-
-from model.deeplab_multi_dropout_featureOutput import Res_Deeplab   ##########
+from model.deeplab_multi import Res_Deeplab   ##########
 from utils.loss import CrossEntropy2d
 from dataset.gta5_dataset_weakly import GTA5DataSet
 from dataset.cityscapes_dataset_weakly import cityscapesDataSet
 import dataset.cityscapes_dataset
-
 
 IMG_MEAN = np.array((104.00698793, 116.66876762, 122.67891434), dtype=np.float32)
 SEQ = torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]])
@@ -27,15 +25,15 @@ SEQ = torch.tensor([[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]])
 MODEL = 'DeepLab'
 BATCH_SIZE = 1
 ITER_SIZE = 1
-NUM_WORKERS = 1
+NUM_WORKERS = 0
 DATA_DIRECTORY = './data/GTA5'
 DATA_LIST_PATH = './dataset/gta5_list/train.txt'
-INPUT_SIZE = '512,256'            ##########
+INPUT_SIZE = '1280,720'            ##########
 DATA_DIRECTORY_TARGET = './data/Cityscapes/data'
 DATA_LIST_PATH_TARGET = './dataset/cityscapes_list/train.txt'
 DATA_LIST_PATH_TARGET_VALIDATION = './dataset/cityscapes_list/val.txt'
-INPUT_SIZE_TARGET = '512,256'     ##########
-COMPARE_SIZE = '512,256'     ##########
+INPUT_SIZE_TARGET = '1024,512'     ##########
+COMPARE_SIZE = '2048,1024'     ##########
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 19
@@ -43,11 +41,10 @@ NUM_STEPS = 250000
 NUM_STEPS_STOP = 250000      
 POWER = 0.9
 RANDOM_SEED = 1234
-#RESTORE_FROM = 'pretrain.pth'      ##########
-RESTORE_FROM = './snapshots/model_baseline_dropout/GTA5_99000.pth'      ##########
+RESTORE_FROM = 'pretrain.pth'      ##########
 SAVE_PRED_EVERY = 500
-SNAPSHOT_DIR = './snapshots/model_weakly_nomulti'   ##########
-RESULTS_DIR = './result_weakly_dropout_entrop_tog.txt'                  ##########
+SNAPSHOT_DIR = './snapshots/model_IN'   ##########
+RESULTS_DIR = './result_IN.txt'                  ##########
 WEIGHT_DECAY = 0.0005
 
 LEARNING_RATE_D = 1e-4
@@ -187,9 +184,12 @@ def main():
     h, w = map(int, args.input_size_target.split(','))
     input_size_target = (h, w)
 
+    torch.cuda.set_device(args.gpu)
+
+
 ############################
 #validation data
-    testloader = data.DataLoader(dataset.cityscapes_dataset.cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
+    testloader = data.DataLoader(dataset.cityscapes_dataset.cityscapesDataSet(args.data_dir_target, args.data_list_target_val, crop_size=input_size_target, mean=IMG_MEAN, scale=False, mirror=False, set=args.set_val),
                                     batch_size=1, shuffle=False, pin_memory=True)
     with open('./dataset/cityscapes_list/info.json', 'r') as fp:
         info = json.load(fp)
@@ -206,31 +206,34 @@ def main():
     cudnn.enabled = True
 
     # Create network
-    if args.model == 'DeepLab':
-        model = Res_Deeplab(num_classes=args.num_classes)
-        saved_state_dict = torch.load(args.restore_from)
-        model.load_state_dict(saved_state_dict)
-
-
 #    if args.model == 'DeepLab':
 #        model = Res_Deeplab(num_classes=args.num_classes)
-#        if args.restore_from[:4] == 'http' :
-#            saved_state_dict = model_zoo.load_url(args.restore_from)
-#        else:
-#            saved_state_dict = torch.load(args.restore_from)
+#        saved_state_dict = torch.load(args.restore_from)
+#        model.load_state_dict(saved_state_dict)
 
-#        new_params = model.state_dict().copy()
-#        for i in saved_state_dict:
-#            # Scale.layer5.conv2d_list.3.weight
-#            i_parts = i.split('.')
-#            # print i_parts
-#            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
-#                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
-#                # print i_parts
-#        model.load_state_dict(new_params)
+    # Create network
+    if args.model == 'DeepLab':
+        model = Res_Deeplab(num_classes=args.num_classes)
+        saved_state_dict = torch.load(args.restore_from,map_location=lambda storage, loc: storage.cuda(args.gpu))
+
+        new_params = model.state_dict().copy()
+        for i in saved_state_dict:
+            # Scale.layer5.conv2d_list.3.weight
+            i_parts = i.split('.')
+     #       print(i)
+            if not args.num_classes == 19 or not i_parts[1] == 'layer5':
+                new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
+                # print i_parts
+        model.load_state_dict(new_params)
 
     model.train()
     model.cuda(args.gpu)
+
+   # print(model.bn1.running_var)
+   # print(model.bn1.running_var,model.bn1.running_mean,model.bn1.weight,model.bn1.bias)
+
+   # for parameter in model.bn1.parameters():
+    #    print(parameter.name,parameter.data)
 
     cudnn.benchmark = True
 
@@ -266,6 +269,7 @@ def main():
 
     Softmax = torch.nn.Softmax()
     AvePool = torch.nn.AvgPool2d(kernel_size=(256,512))
+    MaxPool = torch.nn.MaxPool2d(kernel_size=(256,512), return_indices=True)
     bce_loss = torch.nn.BCEWithLogitsLoss()
 
     for i_iter in range(args.num_steps):
@@ -280,74 +284,32 @@ def main():
         model.train()
         optimizer.zero_grad()
 
+
         adjust_learning_rate(optimizer, i_iter)
 
         for sub_i in range(args.iter_size):
 
             # train with source
-     
-            for params in model.layer6.parameters():
-                params.requires_grad = True
 
             _, batch = next(trainloader_iter)
             images, labels, class_label_source, mask_weakly, _, name = batch       
             images = Variable(images).cuda(args.gpu)
-            pred,_ = model(images)
+            _,pred = model(images)
             pred = interp(pred)
 
             loss_seg = loss_calc(pred, labels, args.gpu)
-  
-            _, batch = next(targetloader_iter)
-            images, class_label, _, _ = batch
-            images = Variable(images).cuda(args.gpu)
-            pred_target,feature_target = model(images)
-            pred_target = interp(pred_target)
 
-            class_label_target_lse = class_label.type(torch.FloatTensor)
-            exp_target = torch.min(torch.exp(1*pred_target), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
-            lse  = (1.0/1) * torch.log(AvePool(exp_target))
-            loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
+            loss =  loss_seg 
 
-            feature_target = feature_target.detach()
-            prob_tar = F.softmax( interp(model.layer6(feature_target)) )
-            log_prob_tar = torch.log(prob_tar + 1e-45)
-            entropy_samples = - torch.sum(torch.mul(prob_tar,log_prob_tar)) / (512*256)
-            loss = loss_seg - 0.1 * entropy_samples + 0.2 * loss_lse_target
-            loss.backward(retain_graph=True)
-           # loss.backward()
+            loss.backward()
             loss_seg_value += loss_seg.data.item() / args.iter_size
-            entropy_samples_value +=entropy_samples.data.item() / args.iter_size
-            loss_lse_target_value += loss_lse_target.data.item() / args.iter_size
-           # optimizer.step()
-########################################################
 
-           # pred_target, _  = model(images)
-           # pred_target = interp(pred_target)
-
-            #optimizer.zero_grad()
-
-            for params in model.layer6.parameters():
-                params.requires_grad = False
-
-           # pred_target = pred_target.detach()
-            prob_tar = F.softmax(pred_target)
-            log_prob_tar = torch.log(prob_tar + 1e-45)
-            entropy_samples_adv = - torch.sum(torch.mul(prob_tar, log_prob_tar)) / (512*256)
-
-           # class_label_target_lse = class_label.type(torch.FloatTensor)
-           # exp_target = torch.min(torch.exp(1*pred_target), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
-           # lse  = (1.0/1) * torch.log(AvePool(exp_target))
-           # loss_lse_target = bce_loss(lse, Variable(class_label_target_lse.reshape(lse.size())).cuda(args.gpu))
-
-            loss_1 =  0.1 *  entropy_samples_adv 
-            loss_1.backward()
-       #     loss_lse_target_value += loss_lse_target.data.item() / args.iter_size
-
-            optimizer.step()
+        optimizer.step()
+        del pred, images, labels
 
         print('exp = {}'.format(args.snapshot_dir))
         print(
-        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f} loss_lse_target = {3:.3f} entropy_samples = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_lse_target_value, entropy_samples_value))
+        'iter = {0:8d}/{1:8d}, loss_seg = {2:.3f} loss_lse_source = {3:.3f} loss_lse_target = {4:.3f}'.format(i_iter, args.num_steps, loss_seg_value, loss_lse_source_value, loss_lse_target_value))
 
         if i_iter >= args.num_steps_stop - 1:
             print('save model ...')
@@ -357,22 +319,23 @@ def main():
         if i_iter % args.save_pred_every == 0 and i_iter != 0:
             print('taking snapshot ...')
             model.eval()
-            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_' + str(i_iter) + '.pth'))
+            torch.save(model.state_dict(), osp.join(args.snapshot_dir, 'GTA5_'  + '.pth'))
             hist = np.zeros((19, 19))
             
             f = open(args.results_dir, 'a')
             for index, batch in enumerate(testloader):
                 print(index)
                 image, _, name = batch
-                output,_ = model(Variable(image, volatile=True).cuda(args.gpu))
+                _,output = model(Variable(image, volatile=True).cuda(args.gpu))
                 pred = interp_val(output)
                 pred = pred[0].permute(1,2,0)
                 pred = torch.max(pred, 2)[1].byte()
-                pred = pred.data.cpu().numpy()
+                pred_cpu = pred.data.cpu().numpy()
+                del pred, output
                 label = Image.open(gt_imgs[index])
                 label = np.array(label.resize(com_size, Image.NEAREST))
                 label = label_mapping(label, mapping)
-                hist += fast_hist(label.flatten(), pred.flatten(), 19)
+                hist += fast_hist(label.flatten(), pred_cpu.flatten(), 19)
           
             mIoUs = per_class_iu(hist)
             mIoU = round(np.nanmean(mIoUs) * 100, 2)

@@ -1,0 +1,12 @@
+i_iter:500,        miou:26.19000 
+i_iter:1000,        miou:30.22000 
+i_iter:1500,        miou:31.87000 
+i_iter:2000,        miou:31.50000 
+i_iter:2500,        miou:32.66000 
+i_iter:3000,        miou:36.15000 
+i_iter:3500,        miou:35.67000 
+i_iter:4000,        miou:33.83000 
+i_iter:4500,        miou:37.83000 
+i_iter:5000,        miou:38.91000 
+i_iter:5500,        miou:43.56000 
+i_iter:6000,        miou:41.94000 
