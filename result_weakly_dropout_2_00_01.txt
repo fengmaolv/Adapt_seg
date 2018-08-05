@@ -412,3 +412,6 @@ i_iter:217500,        miou:38.13000
 i_iter:218000,        miou:38.87000 
 i_iter:218500,        miou:38.13000 
 i_iter:219000,        miou:38.93000 
+i_iter:219500,        miou:39.62000 
+i_iter:220000,        miou:39.70000 
+i_iter:220500,        miou:39.81000 

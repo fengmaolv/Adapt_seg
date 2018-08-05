@@ -17,4 +17,4 @@
 *.swl
 *.zip
 .gitignore
-*.py
+.*
