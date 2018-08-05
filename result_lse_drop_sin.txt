@@ -117,3 +117,15 @@ i_iter:58000,        miou:45.82000
 i_iter:58500,        miou:44.12000 
 i_iter:59000,        miou:43.49000 
 i_iter:59500,        miou:41.80000 
+i_iter:60000,        miou:43.68000 
+i_iter:60500,        miou:46.10000 
+i_iter:61000,        miou:45.77000 
+i_iter:61500,        miou:46.10000 
+i_iter:62000,        miou:45.92000 
+i_iter:62500,        miou:44.10000 
+i_iter:63000,        miou:43.85000 
+i_iter:63500,        miou:40.70000 
+i_iter:64000,        miou:44.44000 
+i_iter:64500,        miou:46.46000 
+i_iter:65000,        miou:46.34000 
+i_iter:65500,        miou:44.31000 

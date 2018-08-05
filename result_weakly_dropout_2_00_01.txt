@@ -396,3 +396,13 @@ i_iter:197500,        miou:38.92000
 i_iter:198000,        miou:39.19000 
 i_iter:198500,        miou:38.27000 
 i_iter:199000,        miou:38.37000 
+i_iter:211500,        miou:38.92000 
+i_iter:212000,        miou:38.35000 
+i_iter:212500,        miou:38.32000 
+i_iter:213000,        miou:38.26000 
+i_iter:213500,        miou:39.39000 
+i_iter:214000,        miou:38.60000 
+i_iter:214500,        miou:37.44000 
+i_iter:215000,        miou:38.31000 
+i_iter:215500,        miou:37.60000 
+i_iter:216000,        miou:39.27000 

@@ -214,3 +214,14 @@ i_iter:58000,        miou:44.46000
 i_iter:58500,        miou:41.07000 
 i_iter:59000,        miou:41.44000 
 i_iter:59500,        miou:43.83000 
+i_iter:60000,        miou:42.69000 
+i_iter:60500,        miou:45.00000 
+i_iter:61000,        miou:45.53000 
+i_iter:61500,        miou:44.15000 
+i_iter:62000,        miou:45.22000 
+i_iter:62500,        miou:44.19000 
+i_iter:63000,        miou:41.87000 
+i_iter:63500,        miou:44.97000 
+i_iter:64500,        miou:46.06000 
+i_iter:65000,        miou:47.13000 
+i_iter:65500,        miou:46.20000 

@@ -153,11 +153,6 @@ def per_class_iu(hist):
     return np.diag(hist) / (hist.sum(1) + hist.sum(0) - np.diag(hist))
 
 def loss_calc(pred, label, gpu):
-    """
-    This function returns cross entropy loss for semantic segmentation
-    """
-    # out shape batch_size x channels x h x w -> batch_size x channels x h x w
-    # label shape h x w x 1 x batch_size  -> batch_size x 1 x h x w
     label = Variable(label.long()).cuda(gpu)
     criterion = CrossEntropy2d().cuda(gpu)
 
@@ -193,19 +188,8 @@ def main():
     # Create network
     if args.model == 'DeepLab':
         model = Res_Deeplab(num_classes=args.num_classes)
-     #   if args.restore_from[:4] == 'http' :
-     #       saved_state_dict = model_zoo.load_url(args.restore_from)
-     #   else:
         saved_state_dict = torch.load(args.restore_from, map_location=lambda storage, loc: storage.cuda(args.gpu))
 
-        #new_params = model.state_dict().copy()
-     #   for i in saved_state_dict:
-     #       # Scale.layer5.conv2d_list.3.weight
-     #       i_parts = i.split('.')
-     #       # print i_parts
-     #       if not args.num_classes == 19 or not i_parts[1] == 'layer5':
-     #           new_params['.'.join(i_parts[1:])] = saved_state_dict[i]
-                # print i_parts
         model.load_state_dict(saved_state_dict)
 
     model.train()
@@ -288,13 +272,6 @@ def main():
 
             loss_seg = loss_calc(pred, labels, args.gpu)
             del pred, images
-     #       num = torch.sum(mask_weakly[0][0]).data.item()
-     #       class_label_source_lse = class_label_source.type(torch.FloatTensor)
-     #       exp_source = torch.min(torch.exp(1*pred), Variable(torch.exp(torch.tensor(40.0))).cuda(args.gpu))
-     #       lse  = (1.0/1) * torch.log( (input_size[0]*input_size[1]/num) * AvePool(torch.exp(1*pred) * mask_weakly.type(torch.FloatTensor).cuda(args.gpu)))
-     #       loss_lse_source = bce_loss(lse, Variable(class_label_source_lse.reshape(lse.size())).cuda(args.gpu))
-
-            # train with target
 
             _, batch = next(targetloader_iter)
             images, class_label, _, _ = batch
