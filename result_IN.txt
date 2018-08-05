@@ -378,3 +378,4 @@ i_iter:91000,        miou:36.34000
 i_iter:91500,        miou:35.93000 
 i_iter:92000,        miou:36.23000 
 i_iter:92500,        miou:34.30000 
+i_iter:93000,        miou:34.79000 

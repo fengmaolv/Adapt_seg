@@ -116,3 +116,4 @@ i_iter:57500,        miou:45.04000
 i_iter:58000,        miou:45.82000 
 i_iter:58500,        miou:44.12000 
 i_iter:59000,        miou:43.49000 
+i_iter:59500,        miou:41.80000 
