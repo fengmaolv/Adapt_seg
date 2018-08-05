@@ -130,3 +130,4 @@ i_iter:64500,        miou:46.46000
 i_iter:65000,        miou:46.34000 
 i_iter:65500,        miou:44.31000 
 i_iter:66000,        miou:44.86000 
+i_iter:66500,        miou:44.30000 
