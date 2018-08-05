@@ -225,3 +225,4 @@ i_iter:63500,        miou:44.97000
 i_iter:64500,        miou:46.06000 
 i_iter:65000,        miou:47.13000 
 i_iter:65500,        miou:46.20000 
+i_iter:66000,        miou:46.18000 
