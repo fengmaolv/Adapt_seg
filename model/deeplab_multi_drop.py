@@ -71,7 +71,7 @@ class Classifier_Module(nn.Module):
     def __init__(self, inplanes, dilation_series, padding_series, num_classes):
         super(Classifier_Module, self).__init__()
 
-        self.drop = nn.Dropout(0.5)
+        self.drop = nn.Dropout(0.3)
         self.conv2d_list = nn.ModuleList()
         for dilation, padding in zip(dilation_series, padding_series):
             self.conv2d_list.append(
